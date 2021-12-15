@@ -9,22 +9,25 @@ public:
   PowerManagement();
   bool begin(TwoWire &port);
 
-  void activateLoRa();
-  void deactivateLoRa();
+  void LoRaActivate();
+  void LoRaDeactivate();
+  bool isLoRaActivated();
 
-  void activateGPS();
-  void deactivateGPS();
+  void GPSActivate();
+  void GPSDeactivate();
+  bool isGPSActivated();
 
-  void activateOLED();
-  void decativateOLED();
+  void OLEDActivate();
+  void OLEDDeactivate();
+  bool isOLEDActivated();
 
-  void activateMeasurement();
-  void deactivateMeasurement();
+  void MeasurementsActivate();
+  void MeasurementsDeactivate();
 
   double getBatteryVoltage();
   double getBatteryChargeDischargeCurrent();
 
-  bool isBatteryConnect();
+  bool isBatteryConnected();
 
 private:
   AXP20X_Class axp;

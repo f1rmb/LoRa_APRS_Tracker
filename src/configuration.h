@@ -5,80 +5,124 @@
 
 #include <Arduino.h>
 
-class Configuration {
-public:
-  class Beacon {
-  public:
-    Beacon() : message("LoRa Tracker, Info: github.com/lora-aprs/LoRa_APRS_Tracker"), timeout(1), symbol("["), overlay("/"), button_tx(false) {
-    }
+class Configuration
+{
+    public:
+        static const uint32_t constexpr CONFIGURATION_DISPLAY_TIMEOUT = 5000; // 5 seconds
 
-    String message;
-    int    timeout;
-    String symbol;
-    String overlay;
-    bool   button_tx;
-  };
+        class Beacon
+        {
+            public:
+            Beacon() :
+                message("LoRa Tracker, Info: github.com/lora-aprs/LoRa_APRS_Tracker"),
+                timeout(1),
+                symbol("["),
+                overlay("/"),
+                button_tx(false)
+            {
+            }
 
-  class Smart_Beacon {
-  public:
-    Smart_Beacon() : active(false), turn_min(25), slow_rate(300), slow_speed(10), fast_rate(60), fast_speed(100), min_tx_dist(100), min_bcn(5) {
-    }
+            String message;
+            int    timeout;
+            String symbol;
+            String overlay;
+            bool   button_tx;
+        };
 
-    bool active;
-    int  turn_min;
-    int  slow_rate;
-    int  slow_speed;
-    int  fast_rate;
-    int  fast_speed;
-    int  min_tx_dist;
-    int  min_bcn;
-  };
+        class Smart_Beacon
+        {
+            public:
+                Smart_Beacon() :
+                    active(false),
+                    turn_min(25),
+                    slow_rate(300),
+                    slow_speed(10),
+                    fast_rate(60),
+                    fast_speed(100),
+                    min_tx_dist(100),
+                    min_bcn(5)
+                {
+                }
 
-  class LoRa {
-  public:
-    LoRa() : frequencyRx(433775000), frequencyTx(433775000), power(20), spreadingFactor(12), signalBandwidth(125000), codingRate4(5) {
-    }
+                bool active;
+                int  turn_min;
+                int  slow_rate;
+                int  slow_speed;
+                int  fast_rate;
+                int  fast_speed;
+                int  min_tx_dist;
+                int  min_bcn;
+        };
 
-    long frequencyRx;
-    long frequencyTx;
-    int  power;
-    int  spreadingFactor;
-    long signalBandwidth;
-    int  codingRate4;
-  };
+        class LoRa
+        {
+            public:
+                LoRa() :
+                    frequencyRx(433775000),
+                    frequencyTx(433775000),
+                    power(20),
+                    spreadingFactor(12),
+                    signalBandwidth(125000),
+                    codingRate4(5)
+                {
+                }
 
-  class PTT {
-  public:
-    PTT() : active(false), io_pin(4), start_delay(0), end_delay(0), reverse(false) {
-    }
+                long frequencyRx;
+                long frequencyTx;
+                int  power;
+                int  spreadingFactor;
+                long signalBandwidth;
+                int  codingRate4;
+        };
 
-    bool active;
-    int  io_pin;
-    int  start_delay;
-    int  end_delay;
-    bool reverse;
-  };
+        class PTT
+        {
+            public:
+                PTT() :
+                    active(false),
+                    io_pin(4),
+                    start_delay(0),
+                    end_delay(0),
+                    reverse(false)
+                {
+                }
 
-  Configuration() : callsign("NOCALL-10"), debug(false), enhance_precision(true){};
+                bool active;
+                int  io_pin;
+                int  start_delay;
+                int  end_delay;
+                bool reverse;
+        };
 
-  String       callsign;
-  bool         debug;
-  bool         enhance_precision;
-  Beacon       beacon;
-  Smart_Beacon smart_beacon;
-  LoRa         lora;
-  PTT          ptt;
+        Configuration() :
+            callsign("NOCALL-10"),
+            debug(false),
+            enhance_precision(true),
+            display_timeout(CONFIGURATION_DISPLAY_TIMEOUT)
+        {
+
+        };
+
+        String       callsign;
+        bool         debug;
+        bool         enhance_precision;
+        uint32_t     display_timeout;
+        Beacon       beacon;
+        Smart_Beacon smart_beacon;
+        LoRa         lora;
+        PTT          ptt;
 };
 
-class ConfigurationManagement {
-public:
-  explicit ConfigurationManagement(String FilePath);
+class ConfigurationManagement
+{
+    public:
+        explicit ConfigurationManagement(String FilePath);
 
-  Configuration readConfiguration();
-  void          writeConfiguration(Configuration conf);
+        Configuration readConfiguration();
+        void          writeConfiguration(Configuration conf);
 
-private:
-  const String mFilePath;
+    private:
+        const String m_FilePath;
 };
 
 #endif

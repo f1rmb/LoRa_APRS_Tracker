@@ -2,6 +2,7 @@
 	"callsign":"NOCALL-7",
 	"debug": false,
 	"enhance_precision": true,
+	"display_timeout": 10000,
 	"beacon":
 	{
 		"message":"LoRa Tracker",
