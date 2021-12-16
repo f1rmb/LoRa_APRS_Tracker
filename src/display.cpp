@@ -58,48 +58,6 @@ void OLEDDisplay::displayLines(const String &header, const String &line1, const 
         return;
     }
 
-    m_display.clearDisplay();
-    m_display.setTextColor(WHITE);
-    m_display.setTextSize(2);
-    m_display.setCursor(0, 0);
-    m_display.println(header);
-
-    m_display.setTextSize(1);
-
-    if (line1 != emptyString)
-    {
-        m_display.setCursor(0, 16);
-        m_display.println(line1);
-    }
-
-    if (line2 != emptyString)
-    {
-        m_display.setCursor(0, 26);
-        m_display.println(line2);
-    }
-
-    if (line3 != emptyString)
-    {
-        m_display.setCursor(0, 36);
-        m_display.println(line3);
-    }
-
-    if (line4 != emptyString)
-    {
-        m_display.setCursor(0, 46);
-        m_display.println(line4);
-    }
-
-    if (line5 != emptyString)
-    {
-        m_display.setCursor(0, 56);
-        m_display.println(line5);
-    }
-
-    m_display.ssd1306_command(SSD1306_SETCONTRAST);
-    m_display.ssd1306_command(1);
-    m_display.display();
-
     // Store currently displayed strings.
     currentStrings[0] = header;
     currentStrings[1] = line1;
@@ -107,6 +65,53 @@ void OLEDDisplay::displayLines(const String &header, const String &line1, const 
     currentStrings[3] = line3;
     currentStrings[4] = line4;
     currentStrings[5] = line5;
+
+    if (m_isActivated)
+    {
+        m_display.clearDisplay();
+        m_display.setTextColor(WHITE);
+        m_display.setTextSize(2);
+        m_display.setCursor(0, 0);
+        m_display.println(header);
+
+        m_display.setTextSize(1);
+
+        if (line1 != emptyString)
+        {
+            m_display.setCursor(0, 16);
+            m_display.println(line1);
+        }
+
+        if (line2 != emptyString)
+        {
+            m_display.setCursor(0, 26);
+            m_display.println(line2);
+        }
+
+        if (line3 != emptyString)
+        {
+            m_display.setCursor(0, 36);
+            m_display.println(line3);
+        }
+
+        if (line4 != emptyString)
+        {
+            m_display.setCursor(0, 46);
+            m_display.println(line4);
+        }
+
+        if (line5 != emptyString)
+        {
+            m_display.setCursor(0, 56);
+            m_display.println(line5);
+        }
+
+        setCpuFrequencyMhz(160);
+        m_display.ssd1306_command(SSD1306_SETCONTRAST);
+        m_display.ssd1306_command(1);
+        m_display.display();
+        setCpuFrequencyMhz(80);
+    }
 
     delay(msPause);
 }
@@ -156,6 +161,7 @@ void OLEDDisplay::Activate(bool activate)
 
     if (activate != m_isActivated)
     {
+        m_isActivated = activate;
         m_display.ssd1306_command(activate ? SSD1306_DISPLAYON : SSD1306_DISPLAYOFF);
         m_display.ssd1306_command(1);
 
@@ -163,8 +169,6 @@ void OLEDDisplay::Activate(bool activate)
         {
             displayLines(currentStrings[0], currentStrings[1], currentStrings[2], currentStrings[3], currentStrings[4], currentStrings[5]);
         }
-
-        m_isActivated = activate;
     }
 }
 
