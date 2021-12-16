@@ -39,7 +39,7 @@ struct GlobalParameters
             batteryVoltage(""),
             batteryChargeCurrent(""),
 #ifdef TTGO_T_Beam_V1_0
-            rateLimitCheckBattery(0),
+            batteryLastCheckTime(0),
 #endif
             m_displayTimeout(Configuration::CONFIGURATION_DISPLAY_TIMEOUT),
             m_displayLastTimeout(millis()),
@@ -105,7 +105,7 @@ struct GlobalParameters
         String         batteryVoltage;
         String         batteryChargeCurrent;
 #ifdef TTGO_T_Beam_V1_0
-        unsigned int   rateLimitCheckBattery;
+        unsigned long  batteryLastCheckTime;
 #endif
 
     private:
@@ -138,6 +138,9 @@ static String padding(unsigned int number, unsigned int width);
 // cppcheck-suppress unusedFunction
 void setup()
 {
+    // Log only Errors
+    Logger::instance().setDebugLevel(Logger::DEBUG_LEVEL_ERROR);
+
     Serial.begin(115200);
 
     gParams.DisableDisplayTimeout(); // Keep the OLED screen ON
@@ -258,19 +261,22 @@ void loop()
 
 
 #ifdef TTGO_T_Beam_V1_0
-    if (!(gParams.rateLimitCheckBattery++ % 60))
+    unsigned long m = millis();
+    // Update the battery every 60 seconds
+    if ((gParams.batteryLastCheckTime == 0) || ((m - gParams.batteryLastCheckTime) > 60000))
     {
         gParams.batteryIsConnected = pm.isBatteryConnected();
-    }
+        gParams.batteryLastCheckTime = m;
 
-    if (gParams.batteryIsConnected)
-    {
-        gParams.batteryVoltage       = String(pm.getBatteryVoltage(), 2);
-        gParams.batteryChargeCurrent = String(pm.getBatteryChargeDischargeCurrent(), 0);
+        if (gParams.batteryIsConnected)
+        {
+            gParams.batteryVoltage       = String(pm.getBatteryVoltage(), 2);
+            gParams.batteryChargeCurrent = String(pm.getBatteryChargeDischargeCurrent(), 0);
+        }
     }
 #endif
 
-    if (!gParams.forcePositionUpdate && gps_loc_update && cfg.smart_beacon.active)
+    if ((gParams.forcePositionUpdate == false) && gps_loc_update && cfg.smart_beacon.active)
     {
         uint32_t lastTx = millis() - gParams.lastTxTime;
 
@@ -480,6 +486,8 @@ void loop()
         logPrintlnE("No GPS frames detected! Try to reset the GPS Chip with this "
                 "firmware: https://github.com/lora-aprs/TTGO-T-Beam_GPS-reset");
     }
+
+    delay(100); // Slow it down
 }
 
 static void buttonClickCallback()
