@@ -6,7 +6,6 @@
 #include <TinyGPS++.h>
 #include <WiFi.h>
 #include <logger.h>
-
 #include <SparkFun_u-blox_GNSS_Arduino_Library.h>
 
 #include "configuration.h"
@@ -100,7 +99,7 @@ struct GlobalParameters
         double         lastTxLng;
         double         lastTxdistance;
         uint32_t       txInterval;
-        uint32_t       lastTxTime;
+        unsigned long  lastTxTime;
         int            speedZeroSent;
         bool           batteryIsConnected;
         String         batteryVoltage;
@@ -126,11 +125,11 @@ static void gpsConfiguration();
 static void gpsReset();
 
 
-static String create_lat_aprs(RawDegrees lat);
-static String create_long_aprs(RawDegrees lng);
-static String create_lat_aprs_dao(RawDegrees lat);
-static String create_long_aprs_dao(RawDegrees lng);
-static String create_dao_aprs(RawDegrees lat, RawDegrees lng);
+static String createLatAPRS(RawDegrees lat);
+static String createLongAPRS(RawDegrees lng);
+static String createLatAPRSDAO(RawDegrees lat);
+static String createLongAPRSDAO(RawDegrees lng);
+static String createAPRSDAO(RawDegrees lat, RawDegrees lng);
 static String createDateString(time_t t);
 static String createTimeString(time_t t);
 static String getSmartBeaconState();
@@ -293,10 +292,10 @@ void loop()
             // Get headings and heading delta
             double headingDelta = abs(gParams.previousHeading - gParams.currentHeading);
 
-            if (lastTx > cfg.smart_beacon.min_bcn * 1000)
+            if (lastTx > (cfg.smart_beacon.min_bcn * 1000))
             {
                 // Check for heading more than 25 degrees
-                if (headingDelta > cfg.smart_beacon.turn_min && gParams.lastTxdistance > cfg.smart_beacon.min_tx_dist)
+                if ((headingDelta > cfg.smart_beacon.turn_min) && (gParams.lastTxdistance > cfg.smart_beacon.min_tx_dist))
                 {
                     gParams.forcePositionUpdate = true;
                 }
@@ -311,27 +310,27 @@ void loop()
         String      lng;
         String      dao;
 
-        gParams.forcePositionUpdate         = false;
+        gParams.forcePositionUpdate = false;
         gParams.nextBeaconTimeStamp = now() + (cfg.smart_beacon.active ? cfg.smart_beacon.slow_rate : (cfg.beacon.timeout * SECS_PER_MIN));
 
         msg.setSource(cfg.callsign);
         msg.setDestination("APLT00-1");
 
-        if (!cfg.enhance_precision)
+        if (cfg.enhance_precision == false)
         {
-            lat = create_lat_aprs(gps.location.rawLat());
-            lng = create_long_aprs(gps.location.rawLng());
+            lat = createLatAPRS(gps.location.rawLat());
+            lng = createLongAPRS(gps.location.rawLng());
         }
         else
         {
-            lat = create_lat_aprs_dao(gps.location.rawLat());
-            lng = create_long_aprs_dao(gps.location.rawLng());
-            dao = create_dao_aprs(gps.location.rawLat(), gps.location.rawLng());
+            lat = createLatAPRSDAO(gps.location.rawLat());
+            lng = createLongAPRSDAO(gps.location.rawLng());
+            dao = createAPRSDAO(gps.location.rawLat(), gps.location.rawLng());
         }
 
 
-        String alt     = "";
-        int    alt_int = max(-99999, min(999999, (int)gps.altitude.feet()));
+        String alt;
+        int    alt_int = std::max(-99999, std::min(999999, (int)gps.altitude.feet()));
 
         if (alt_int < 0)
         {
@@ -343,13 +342,13 @@ void loop()
         }
 
 
-        String course_and_speed = "";
-        int    speed_int        = max(0, min(999, (int)gps.speed.knots()));
+        String course_and_speed;
+        int    speed_int        = std::max(0, std::min(999, (int)gps.speed.knots()));
 
         if (gParams.speedZeroSent < 3)
         {
             String speed      = padding(speed_int, 3);
-            int    course_int = max(0, min(360, (int)gps.course.deg()));
+            int    course_int = std::max(0, std::min(360, (int)gps.course.deg()));
 
             /* course in between 1..360 due to aprs spec */
             if (course_int == 0)
@@ -357,7 +356,7 @@ void loop()
                 course_int = 360;
             }
 
-            String course    = padding(course_int, 3);
+            String course(padding(course_int, 3));
             course_and_speed = course + "/" + speed;
         }
 
@@ -380,14 +379,13 @@ void loop()
         }
 
 
-        String aprsmsg;
-        aprsmsg = "!" + lat + cfg.beacon.overlay + lng + cfg.beacon.symbol + course_and_speed + alt;
+        String aprsmsg("!" + lat + cfg.beacon.overlay + lng + cfg.beacon.symbol + course_and_speed + alt);
 
         // message_text every 10's packet (i.e. if we have beacon rate 1min at high
         // speed -> every 10min). May be enforced above (at expirey of smart beacon
         // rate (i.e. every 30min), or every third packet on static rate (i.e.
         // static rate 10 -> every third packet)
-        if (!(gParams.rateLimitMessageText++ % 10))
+        if ((gParams.rateLimitMessageText++ % 10) == 0)
         {
             aprsmsg += cfg.beacon.message;
         }
@@ -403,7 +401,7 @@ void loop()
         }
 
         msg.getAPRSBody()->setData(aprsmsg);
-        String data = msg.encode();
+        String data(msg.encode());
         logPrintlnD(data);
         oled.Display("<< TX >>", data);
 
@@ -451,6 +449,7 @@ void loop()
         {
             // Change the Tx internal based on the current speed
             int curr_speed = (int)gps.speed.kmph();
+
             if (curr_speed < cfg.smart_beacon.slow_speed)
             {
                 gParams.txInterval = cfg.smart_beacon.slow_rate * 1000;
@@ -471,18 +470,17 @@ void loop()
                  * would lead to decrease of beacon rate in between 5 to 20 km/h. what
                  * is even below the slow speed rate.
                  */
-                gParams.txInterval = min(cfg.smart_beacon.slow_rate, cfg.smart_beacon.fast_speed * cfg.smart_beacon.fast_rate / curr_speed) * 1000;
+                gParams.txInterval = std::min(cfg.smart_beacon.slow_rate, cfg.smart_beacon.fast_speed * cfg.smart_beacon.fast_rate / curr_speed) * 1000;
             }
         }
     }
 
-    if ((cfg.debug == false) && (millis() > 5000 && gps.charsProcessed() < 10))
+    if ((cfg.debug == false) && ((millis() > 5000) && (gps.charsProcessed() < 10)))
     {
         logPrintlnE("No GPS frames detected! Try to reset the GPS Chip with this "
                 "firmware: https://github.com/lora-aprs/TTGO-T-Beam_GPS-reset");
     }
 }
-
 
 static void buttonClickCallback()
 {
@@ -528,10 +526,9 @@ static void loraConfiguration()
     LoRa.setPins(LORA_CS, LORA_RST, LORA_IRQ);
 
     long freq = cfg.lora.frequencyTx;
-    logPrintI("frequency: ");
-    logPrintlnI(String(freq));
+    logPrintlnI("frequency: " + String(freq));
 
-    if (!LoRa.begin(freq))
+    if (LoRa.begin(freq) == false)
     {
         logPrintlnE("Starting LoRa failed!");
         oled.Display("ERROR", "Starting LoRa failed!");
@@ -655,8 +652,8 @@ static char *s_min_nn(uint32_t min_nnnnn, int high_precision)
      * position 2. 1: round at decimal position 4. 2: return decimal position 3-4
      * as base91 encoded char
      */
-
     static char buf[6];
+
     min_nnnnn = min_nnnnn * 0.006;
 
     if (high_precision)
@@ -691,7 +688,7 @@ static char *s_min_nn(uint32_t min_nnnnn, int high_precision)
     return buf;
 }
 
-static String create_lat_aprs(RawDegrees lat)
+static String createLatAPRS(RawDegrees lat)
 {
     char str[20];
     char n_s = 'N';
@@ -708,7 +705,7 @@ static String create_lat_aprs(RawDegrees lat)
     return String(str);
 }
 
-static String create_lat_aprs_dao(RawDegrees lat)
+static String createLatAPRSDAO(RawDegrees lat)
 {
     // round to 4 digits and cut the last 2
     char str[20];
@@ -726,7 +723,7 @@ static String create_lat_aprs_dao(RawDegrees lat)
     return String(str);
 }
 
-static String create_long_aprs(RawDegrees lng)
+static String createLongAPRS(RawDegrees lng)
 {
     char str[20];
     char e_w = 'E';
@@ -740,7 +737,7 @@ static String create_long_aprs(RawDegrees lng)
     return String(str);
 }
 
-static String create_long_aprs_dao(RawDegrees lng)
+static String createLongAPRSDAO(RawDegrees lng)
 {
     // round to 4 digits and cut the last 2
     char str[20];
@@ -755,7 +752,7 @@ static String create_long_aprs_dao(RawDegrees lng)
     return String(str);
 }
 
-static String create_dao_aprs(RawDegrees lat, RawDegrees lng)
+static String createAPRSDAO(RawDegrees lat, RawDegrees lng)
 {
     // !DAO! extension, use Base91 format for best precision
     // /1.1 : scale from 0-99 to 0-90 for base91, int(... + 0.5): round to nearest
