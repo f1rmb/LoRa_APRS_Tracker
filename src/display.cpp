@@ -64,9 +64,10 @@ void OLEDDisplay::displayLines(const String &header, const String &line1, const 
     m_display.setCursor(0, 0);
     m_display.println(header);
 
+    m_display.setTextSize(1);
+
     if (line1 != emptyString)
     {
-        m_display.setTextSize(1);
         m_display.setCursor(0, 16);
         m_display.println(line1);
     }

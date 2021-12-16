@@ -7,6 +7,8 @@
 #include <WiFi.h>
 #include <logger.h>
 
+#include <SparkFun_u-blox_GNSS_Arduino_Library.h>
+
 #include "configuration.h"
 #include "display.h"
 #include "pins.h"
@@ -117,9 +119,12 @@ struct GlobalParameters
 static GlobalParameters  gParams;
 
 
-static void load_configuration();
-static void lora_configuration();
-static void gps_configuration();
+static void buttonClickCallback();
+static void loadConfiguration();
+static void loraConfiguration();
+static void gpsConfiguration();
+static void gpsReset();
+
 
 static String create_lat_aprs(RawDegrees lat);
 static String create_long_aprs(RawDegrees lng);
@@ -130,26 +135,6 @@ static String createDateString(time_t t);
 static String createTimeString(time_t t);
 static String getSmartBeaconState();
 static String padding(unsigned int number, unsigned int width);
-
-static void handle_tx_click()
-{
-#ifdef TTGO_T_Beam_V1_0
-    bool oledWasOn = oled.IsActivated();
-
-    gParams.ResetDisplayTimeout(); // Reset the OLED timeout on any button event
-
-    if (oledWasOn == false) // The OLED was off, hence we won't go further this time
-    {
-        return;
-    }
-#endif
-
-    if (cfg.beacon.button_tx)
-    {
-        // attach TX action to user button (defined by BUTTON_PIN)
-        gParams.forcePositionUpdate = true;
-    }
-}
 
 // cppcheck-suppress unusedFunction
 void setup()
@@ -180,12 +165,12 @@ void setup()
 
     oled.Display("OE5BPA", "LoRa APRS Tracker", "by Peter Buchegger", emptyString, emptyString, "Mods: F1RMB - v0.99");
 
-    load_configuration();
-    gps_configuration();
+    loadConfiguration();
+    gpsConfiguration();
 
     delay(2000);
 
-    lora_configuration();
+    loraConfiguration();
 
     if (cfg.ptt.active)
     {
@@ -199,13 +184,22 @@ void setup()
     WiFi.mode(WIFI_OFF);
     btStop();
 
-    userBtn.attachClick(handle_tx_click);
+    userBtn.attachClick(buttonClickCallback);
+    userBtn.tick();
 
     logPrintlnI("Smart Beacon is " + getSmartBeaconState());
     oled.Display("INFO", "Smart Beacon is " + getSmartBeaconState(), 1000);
     logPrintlnI("setup done...");
 
     delay(500);
+    userBtn.tick();
+
+    if (userBtn.isIdle() == false)
+    {
+        gpsReset();
+
+        while (true) { }
+    }
 
     gParams.ResetDisplayTimeout(); // Enable OLED timeout
 }
@@ -489,7 +483,28 @@ void loop()
     }
 }
 
-static void load_configuration()
+
+static void buttonClickCallback()
+{
+#ifdef TTGO_T_Beam_V1_0
+    bool oledWasOn = oled.IsActivated();
+
+    gParams.ResetDisplayTimeout(); // Reset the OLED timeout on any button event
+
+    if (oledWasOn == false) // The OLED was off, hence we won't go further this time
+    {
+        return;
+    }
+#endif
+
+    if (cfg.beacon.button_tx)
+    {
+        // attach TX action to user button (defined by BUTTON_PIN)
+        gParams.forcePositionUpdate = true;
+    }
+}
+
+static void loadConfiguration()
 {
     ConfigurationManagement confmg("/tracker.json");
     cfg = confmg.readConfiguration();
@@ -505,7 +520,7 @@ static void load_configuration()
     }
 }
 
-static void lora_configuration()
+static void loraConfiguration()
 {
     logPrintlnI("Set SPI pins!");
     SPI.begin(LORA_SCK, LORA_MISO, LORA_MOSI, LORA_CS);
@@ -534,9 +549,103 @@ static void lora_configuration()
     oled.Display("INFO", "LoRa init done!", 2000);
 }
 
-static void gps_configuration()
+static void gpsConfiguration()
 {
     ss.begin(9600, SERIAL_8N1, GPS_TX, GPS_RX);
+}
+
+static void gpsReset()
+{
+    SFE_UBLOX_GNSS gnss;
+    uint8_t state = 0;
+
+    do
+    {
+        switch (state)
+        {
+            case 0:
+                while(true)
+                {
+                    if (gnss.begin(ss))
+                    {
+                        oled.Display("GPS  RESET", emptyString, "Connected to GPS", 2000);
+                        gnss.setUART1Output(COM_TYPE_NMEA); //Set the UART port to output NMEA only
+                        gnss.saveConfiguration(); //Save the current settings to flash and BBR
+
+                        oled.Display("GPS  RESET", emptyString, "GPS Configuration", 2000);
+                        gnss.disableNMEAMessage(UBX_NMEA_GLL, COM_PORT_UART1);
+                        gnss.disableNMEAMessage(UBX_NMEA_GSA, COM_PORT_UART1);
+                        gnss.disableNMEAMessage(UBX_NMEA_GSV, COM_PORT_UART1);
+                        gnss.disableNMEAMessage(UBX_NMEA_VTG, COM_PORT_UART1);
+                        gnss.disableNMEAMessage(UBX_NMEA_RMC, COM_PORT_UART1);
+                        gnss.enableNMEAMessage(UBX_NMEA_GGA, COM_PORT_UART1);
+                        gnss.saveConfiguration(); //Save the current settings to flash and BBR
+                        break;
+                    }
+
+                    oled.Display("GPS  RESET", emptyString, "Waiting for GPS", 1000);
+                }
+
+                oled.Display("GPS  RESET", emptyString, "GPS config. saved", 2000);
+                state++;
+                break;
+
+            case 1:
+                oled.Display("GPS  RESET", emptyString, "Hard-Reset cold start");
+                gnss.hardReset();
+                delay(3000);
+                if (gnss.begin(ss))
+                {
+                    oled.Display("GPS  RESET", emptyString, "Hard-Reset SUCCESS");
+                    state++;
+                }
+                else
+                {
+                    oled.Display("GPS  RESET", emptyString, "!! No Response !!", "Starting over");
+                    state = 0;
+                }
+                break;
+
+            case 2:
+                oled.Display("GPS  RESET", emptyString, "Factory Reset");
+                gnss.factoryReset();
+                delay(3000); // takes more than one second... a loop to resync would be best
+
+                if (gnss.begin(ss))
+                {
+                    oled.Display("GPS  RESET",
+                            "      SUCCESS",
+                            " GPS has been reset",
+                            "to factory settings."
+                            " It will take time",
+                            "to acquire satellites", 5000);
+                    state++;
+                }
+                else
+                {
+                    oled.Display("GPS  RESET", emptyString, "!! No Response !!", "Starting over");
+                    state = 0;
+                }
+                break;
+
+            case 3:
+                oled.Display("GPS  RESET",
+                        "       TESTING",
+                        "Outputing GPS frames",
+                        "  to Serial port",
+                        emptyString,
+                        "Press RESET to reboot");
+                for (uint32_t c = 0; c < 300000000; c++)
+                {
+                    if (ss.available())
+                    {
+                        Serial.write(ss.read());  // print anything comes in from the GPS
+                    }
+                }
+                state++;
+                break;
+        }
+    } while (state < 4);
 }
 
 static char *s_min_nn(uint32_t min_nnnnn, int high_precision)
