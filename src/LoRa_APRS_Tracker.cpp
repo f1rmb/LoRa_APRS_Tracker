@@ -138,6 +138,9 @@ static String padding(unsigned int number, unsigned int width);
 // cppcheck-suppress unusedFunction
 void setup()
 {
+    // Save some power, switch from 240MHz to 80MHz, power consummption from 66.8mA to 33.2mA
+    setCpuFrequencyMhz(80);
+
     // Log only Errors
     Logger::instance().setDebugLevel(Logger::DEBUG_LEVEL_ERROR);
 
