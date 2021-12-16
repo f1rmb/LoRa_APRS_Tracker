@@ -25,7 +25,7 @@ struct GlobalParameters
 {
         GlobalParameters() :
             forcePositionUpdate(true),
-            nextBeaconTimeStamp(-1),
+            nextBeaconTimeStamp(now()),
             currentHeading(0),
             previousHeading(0),
             rateLimitMessageText(0),
@@ -238,7 +238,7 @@ void loop()
     {
         setTime(gps.time.hour(), gps.time.minute(), gps.time.second(), gps.date.day(), gps.date.month(), gps.date.year());
 
-        if (gps_loc_update && gParams.nextBeaconTimeStamp <= now())
+        if (gps_loc_update && (gParams.nextBeaconTimeStamp <= now()))
         {
             gParams.forcePositionUpdate = true;
 
