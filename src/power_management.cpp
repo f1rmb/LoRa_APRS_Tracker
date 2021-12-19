@@ -9,26 +9,26 @@ PowerManagement::PowerManagement()
 // cppcheck-suppress unusedFunction
 bool PowerManagement::begin(TwoWire &port)
 {
-  bool result = axp.begin(port, AXP192_SLAVE_ADDRESS);
+    bool result = axp.begin(port, AXP192_SLAVE_ADDRESS);
 
-  if (!result)
-  {
-    axp.setDCDC1Voltage(3300);
-  }
+    if (!result)
+    {
+        axp.setDCDC1Voltage(3300);
+    }
 
-  return result;
+    return result;
 }
 
 // cppcheck-suppress unusedFunction
 void PowerManagement::LoRaActivate()
 {
-  axp.setPowerOutPut(AXP192_LDO2, AXP202_ON);
+    axp.setPowerOutPut(AXP192_LDO2, AXP202_ON);
 }
 
 // cppcheck-suppress unusedFunction
 void PowerManagement::LoRaDeactivate()
 {
-  axp.setPowerOutPut(AXP192_LDO2, AXP202_OFF);
+    axp.setPowerOutPut(AXP192_LDO2, AXP202_OFF);
 }
 
 // cppcheck-suppress unusedFunction
@@ -40,13 +40,13 @@ bool PowerManagement::isLoRaActivated()
 // cppcheck-suppress unusedFunction
 void PowerManagement::GPSActivate()
 {
-  axp.setPowerOutPut(AXP192_LDO3, AXP202_ON);
+    axp.setPowerOutPut(AXP192_LDO3, AXP202_ON);
 }
 
 // cppcheck-suppress unusedFunction
 void PowerManagement::GPSDeactivate()
 {
-  axp.setPowerOutPut(AXP192_LDO3, AXP202_OFF);
+    axp.setPowerOutPut(AXP192_LDO3, AXP202_OFF);
 }
 
 // cppcheck-suppress unusedFunction
@@ -58,13 +58,13 @@ bool PowerManagement::isGPSActivated()
 // cppcheck-suppress unusedFunction
 void PowerManagement::OLEDActivate()
 {
-  axp.setPowerOutPut(AXP192_DCDC1, AXP202_ON);
+    axp.setPowerOutPut(AXP192_DCDC1, AXP202_ON);
 }
 
 // cppcheck-suppress unusedFunction
 void PowerManagement::OLEDDeactivate()
 {
-  axp.setPowerOutPut(AXP192_DCDC1, AXP202_OFF);
+    axp.setPowerOutPut(AXP192_DCDC1, AXP202_OFF);
 }
 
 // cppcheck-suppress unusedFunction
@@ -76,33 +76,33 @@ bool PowerManagement::isOLEDActivated()
 // cppcheck-suppress unusedFunction
 void PowerManagement::MeasurementsActivate()
 {
-  axp.adc1Enable(AXP202_BATT_CUR_ADC1 | AXP202_BATT_VOL_ADC1, true);
+    axp.adc1Enable(AXP202_BATT_CUR_ADC1 | AXP202_BATT_VOL_ADC1, true);
 }
 
 // cppcheck-suppress unusedFunction
 void PowerManagement::MeasurementsDeactivate()
 {
-  axp.adc1Enable(AXP202_BATT_CUR_ADC1 | AXP202_BATT_VOL_ADC1, false);
+    axp.adc1Enable(AXP202_BATT_CUR_ADC1 | AXP202_BATT_VOL_ADC1, false);
 }
 
 // cppcheck-suppress unusedFunction
 double PowerManagement::getBatteryVoltage()
 {
-  return axp.getBattVoltage() / 1000.0;
+    return axp.getBattVoltage() / 1000.0;
 }
 
 // cppcheck-suppress unusedFunction
 double PowerManagement::getBatteryChargeDischargeCurrent()
 {
-  if (axp.isChargeing())
-  {
-    return axp.getBattChargeCurrent();
-  }
+    if (axp.isChargeing())
+    {
+        return axp.getBattChargeCurrent();
+    }
 
-  return -1.0 * axp.getBattDischargeCurrent();
+    return -1.0 * axp.getBattDischargeCurrent();
 }
 
 bool PowerManagement::isBatteryConnected()
 {
-  return axp.isBatteryConnect();
+    return axp.isBatteryConnect();
 }

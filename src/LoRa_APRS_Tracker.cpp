@@ -38,6 +38,9 @@ struct GlobalParameters
             batteryIsConnected(false),
             batteryVoltage(""),
             batteryChargeCurrent(""),
+            loraIsBusy(false),
+            gpsIsSleeping(false),
+            gpsSleepActionTime(0),
 #ifdef TTGO_T_Beam_V1_0
             batteryLastCheckTime(0),
 #endif
@@ -104,6 +107,9 @@ struct GlobalParameters
         bool           batteryIsConnected;
         String         batteryVoltage;
         String         batteryChargeCurrent;
+        volatile bool  loraIsBusy;
+        bool           gpsIsSleeping;
+        unsigned long  gpsSleepActionTime;
 #ifdef TTGO_T_Beam_V1_0
         unsigned long  batteryLastCheckTime;
 #endif
@@ -118,11 +124,15 @@ struct GlobalParameters
 static GlobalParameters  gParams;
 
 
+static void execSleep(uint32_t milliseconds);
 static void buttonClickCallback();
+static void loraTXDoneCallback();
 static void loadConfiguration();
 static void loraConfiguration();
 static void gpsConfiguration();
+static void gpsSuspend(bool suspend);
 static void gpsReset();
+static void gpsCheck();
 
 
 static String createLatAPRS(RawDegrees lat);
@@ -139,7 +149,8 @@ static String padding(unsigned int number, unsigned int width);
 void setup()
 {
     // Save some power, switch from 240MHz to 80MHz, power consummption from 66.8mA to 33.2mA
-    setCpuFrequencyMhz(80);
+    //setCpuFrequencyMhz(80);
+    setCpuFrequencyMhz(160);
 
     // Log only Errors
     Logger::instance().setDebugLevel(Logger::DEBUG_LEVEL_ERROR);
@@ -168,7 +179,7 @@ void setup()
     logPrintlnI("LoRa APRS Tracker by OE5BPA (Peter Buchegger)");
     oled.Init();
 
-    oled.Display("OE5BPA", "LoRa APRS Tracker", "by Peter Buchegger", emptyString, emptyString, "Mods: F1RMB - v0.100");
+    oled.Display("OE5BPA", "LoRa APRS Tracker", "by Peter Buchegger", emptyString, emptyString, "Mods: F1RMB - v0.101");
 
     loadConfiguration();
     gpsConfiguration();
@@ -202,9 +213,12 @@ void setup()
     if (userBtn.isIdle() == false)
     {
         gpsReset();
+        //gpsCheck();
 
         while (true) { }
     }
+
+    oled.Display("INFO", "Waiting for Position");
 
     gParams.ResetDisplayTimeout(); // Enable OLED timeout
 }
@@ -229,7 +243,7 @@ void loop()
         while (ss.available() > 0)
         {
             char c = ss.read();
-            // Serial.print(c);
+            //Serial.print(c);
             gps.encode(c);
         }
     }
@@ -341,6 +355,10 @@ void loop()
         String alt;
         int    alt_int = std::max(-99999, std::min(999999, (int)gps.altitude.feet()));
 
+#if 1
+        alt = String("/A=") + (alt_int < 0 ? "-" : "") + padding((unsigned int)abs(alt_int), ((alt_int < 0) ? 5 : 6));
+        //Serial.println(alt.c_str());
+#else
         if (alt_int < 0)
         {
             alt = "/A=-" + padding(alt_int * -1, 5);
@@ -349,7 +367,7 @@ void loop()
         {
             alt = "/A=" + padding(alt_int, 6);
         }
-
+#endif
 
         String course_and_speed;
         int    speed_int        = std::max(0, std::min(999, (int)gps.speed.knots()));
@@ -404,15 +422,32 @@ void loop()
             aprsmsg += " -  _Bat.: " + gParams.batteryVoltage + "V - Cur.: " + gParams.batteryChargeCurrent + "mA";
         }
 
-        if (cfg.enhance_precision)
+
+        if (cfg.enhance_precision && (dao.length() > 0))
         {
             aprsmsg += " " + dao;
         }
 
+        //aprsmsg.trim();
         msg.getAPRSBody()->setData(aprsmsg);
         String data(msg.encode());
         logPrintlnD(data);
+#warning SPLIT
+#if 0
         oled.Display("<< TX >>", data);
+#else
+        String splitData[5];
+
+        splitData[0] = data.substring(0, 20);
+        splitData[1] = data.substring(21, 21+20);
+        splitData[2] = data.substring(41, 41+20);
+        splitData[3] = data.substring(61, 61+20);
+        splitData[4] = data.substring(81, 81+20);
+        oled.Display("<< TX >>", splitData[0], splitData[1], splitData[2], splitData[3], splitData[4]);
+        //Serial.print(data.c_str());
+        //Serial.print("\n ***** :");
+        //Serial.write((const uint8_t *)data.c_str(), data.length());
+#endif
 
         if (cfg.ptt.active)
         {
@@ -420,14 +455,23 @@ void loop()
             delay(cfg.ptt.start_delay);
         }
 
-        LoRa.beginPacket();
-        // Header:
-        LoRa.write('<');
-        LoRa.write(0xFF);
-        LoRa.write(0x01);
-        // APRS Data:
-        LoRa.write((const uint8_t *)data.c_str(), data.length());
-        LoRa.endPacket();
+        gParams.loraIsBusy = true;
+        if (LoRa.beginPacket() != 0) // Ensure the LoRa module is in RX mode.
+        {
+            // Header:
+            LoRa.write('<');
+            LoRa.write(0xFF);
+            LoRa.write(0x01);
+            // APRS Data:
+            LoRa.write((const uint8_t *)data.c_str(), data.length());
+            LoRa.endPacket();
+            Serial.println("LoRa send");
+        }
+        else
+        {
+            gParams.forcePositionUpdate = true; // Try to resend on the next GPS update
+            Serial.println("LoRa BUSY");
+        }
 
         if (cfg.smart_beacon.active)
         {
@@ -486,11 +530,70 @@ void loop()
 
     if ((cfg.debug == false) && ((millis() > 5000) && (gps.charsProcessed() < 10)))
     {
-        logPrintlnE("No GPS frames detected! Try to reset the GPS Chip with this "
-                "firmware: https://github.com/lora-aprs/TTGO-T-Beam_GPS-reset");
+        logPrintlnE("No GPS frames detected! Try to reset the GPS Chip holding user button on startup.");
     }
 
-    delay(100); // Slow it down
+#if 0
+    if (gParams.loraIsBusy)
+    {
+        delay(100); // Slow it down
+    }
+    else
+    {
+        execSleep(100);
+    }
+#else
+#if 0
+    bool hasFix = false;
+    if (gParams.gpsIsSleeping == false)
+    {
+        hasFix = gps.location.isValid();
+        char buffer[64];
+
+        snprintf(buffer, sizeof(buffer), "%s force: %d", (hasFix ? "FIX" : "NOFIX"), gParams.forcePositionUpdate);
+
+        //Serial.println(hasFix ? "FIX" : "NOFIX");
+        Serial.println(buffer);
+
+        if (hasFix)
+        {
+            if ((millis() - gParams.gpsSleepActionTime) > 5000) // 5s up
+            {
+                Serial.println("GPS SUSPEND");
+                gpsSuspend(true);
+                gParams.gpsSleepActionTime = millis();// + 10000; // 10s
+            }
+        }
+
+    }
+
+    if (gParams.gpsIsSleeping && ((millis() - gParams.gpsSleepActionTime) > 10000)) // 10s down
+    {
+        Serial.println("GPS WAKEUP");
+        gpsSuspend(false);
+        gParams.gpsSleepActionTime = millis();
+    }
+#endif
+
+    delay(200); // Slow it down
+#endif
+}
+
+static void execSleep(uint32_t milliseconds)
+{
+    esp_sleep_enable_timer_wakeup(milliseconds * 1000U);
+    // suspend peripherials
+
+
+    esp_light_sleep_start();
+    //esp_deep_sleep_start();
+
+    // resume peripherials
+}
+
+static void loraTXDoneCallback()
+{
+    gParams.loraIsBusy = false;
 }
 
 static void buttonClickCallback()
@@ -553,13 +656,43 @@ static void loraConfiguration()
     LoRa.enableCrc();
 
     LoRa.setTxPower(cfg.lora.power);
+    LoRa.onTxDone(loraTXDoneCallback);
+
     logPrintlnI("LoRa init done!");
     oled.Display("INFO", "LoRa init done!", 2000);
 }
 
+static void gpsSuspend(bool suspend)
+{
+    SFE_UBLOX_GNSS gnss;
+
+    if (gnss.begin(ss))
+    {
+        gnss.powerSaveMode(suspend);
+        gParams.gpsIsSleeping = suspend;
+    }
+}
+
+
 static void gpsConfiguration()
 {
+    SFE_UBLOX_GNSS gnss;
+
+//    pinMode(GPS_RX, INPUT);
+    //digitalWrite(GPS_RX, PULLUP);
+
+
     ss.begin(9600, SERIAL_8N1, GPS_TX, GPS_RX);
+
+    if (gnss.begin(ss))
+    {
+        gnss.powerSaveMode(true, 5000);
+        //gnss.softwareResetGNSSOnly();
+        //gnss.hardReset();
+        //delay(1000);
+        //gnss.factoryReset();
+        //delay(2000);
+    }
 }
 
 static void gpsReset()
@@ -567,6 +700,7 @@ static void gpsReset()
     SFE_UBLOX_GNSS gnss;
     uint8_t state = 0;
 
+#if 1
     do
     {
         switch (state)
@@ -619,12 +753,23 @@ static void gpsReset()
                 gnss.factoryReset();
                 delay(3000); // takes more than one second... a loop to resync would be best
 
+#if 0
+                if (gnss.powerSaveMode(true) == false)
+                {
+                    oled.Display("GPS  RESET", emptyString, "power save failed");
+
+                    while (true) {}
+                }
+                gnss.saveConfiguration();
+#endif
+
+
                 if (gnss.begin(ss))
                 {
                     oled.Display("GPS  RESET",
                             "      SUCCESS",
                             " GPS has been reset",
-                            "to factory settings."
+                            "to factory settings.",
                             " It will take time",
                             "to acquire satellites", 5000);
                     state++;
@@ -641,7 +786,7 @@ static void gpsReset()
                         "       TESTING",
                         "Outputing GPS frames",
                         "  to Serial port",
-                        emptyString,
+                        "Power: " + String(gnss.getPowerSaveMode()),
                         "Press RESET to reboot");
                 for (uint32_t c = 0; c < 300000000; c++)
                 {
@@ -654,6 +799,129 @@ static void gpsReset()
                 break;
         }
     } while (state < 4);
+#else
+    do
+    {
+        switch (state)
+        {
+            case 0:
+                while(true)
+                {
+                    if (gnss.begin(ss))
+                    {
+                        oled.Display("GPS  RESET", emptyString, "Connected to GPS", 2000);
+                        gnss.setUART1Output(COM_TYPE_NMEA); //Set the UART port to output NMEA only
+                        gnss.saveConfiguration(); //Save the current settings to flash and BBR
+
+                        oled.Display("GPS  RESET", emptyString, "GPS Configuration", 2000);
+                        gnss.disableNMEAMessage(UBX_NMEA_GLL, COM_PORT_UART1);
+                        gnss.disableNMEAMessage(UBX_NMEA_GSA, COM_PORT_UART1);
+                        gnss.disableNMEAMessage(UBX_NMEA_GSV, COM_PORT_UART1);
+                        gnss.disableNMEAMessage(UBX_NMEA_VTG, COM_PORT_UART1);
+                        gnss.disableNMEAMessage(UBX_NMEA_RMC, COM_PORT_UART1);
+                        gnss.disableNMEAMessage(UBX_NMEA_TXT, COM_PORT_UART1);
+                        gnss.enableNMEAMessage(UBX_NMEA_GGA, COM_PORT_UART1);
+                        //gnss.powerSaveMode(true);
+                        gnss.saveConfiguration(); //Save the current settings to flash and BBR
+                        break;
+                    }
+
+                    oled.Display("GPS  RESET", emptyString, "Waiting for GPS", 1000);
+                }
+
+                oled.Display("GPS  RESET", emptyString, "GPS config. saved", 2000);
+                state++;
+                break;
+
+            case 1:
+                oled.Display("GPS  RESET", emptyString, "Hard-Reset cold start");
+                gnss.hardReset();
+                delay(3000);
+                if (gnss.begin(ss))
+                {
+                    oled.Display("GPS  RESET", emptyString, "Hard-Reset SUCCESS");
+                    state++;
+                }
+                else
+                {
+                    oled.Display("GPS  RESET", emptyString, "!! No Response !!", "Starting over");
+                    state = 0;
+                }
+                break;
+
+#if 0
+            case 2:
+                oled.Display("GPS  RESET", emptyString, "Factory Reset");
+                gnss.factoryReset();
+                delay(3000); // takes more than one second... a loop to resync would be best
+
+#if 0
+                if (gnss.powerSaveMode(true) == false)
+                {
+                    oled.Display("GPS  RESET", emptyString, "power save failed");
+
+                    while (true) {}
+                }
+                gnss.saveConfiguration();
+#endif
+
+
+                if (gnss.begin(ss))
+                {
+                    oled.Display("GPS  RESET",
+                            "      SUCCESS",
+                            " GPS has been reset",
+                            "to factory settings.",
+                            " It will take time",
+                            "to acquire satellites", 5000);
+                    state++;
+                }
+                else
+                {
+                    oled.Display("GPS  RESET", emptyString, "!! No Response !!", "Starting over");
+                    state = 0;
+                }
+                break;
+#endif
+
+            case 2:
+                oled.Display("GPS  RESET",
+                        "       TESTING",
+                        "Outputing GPS frames",
+                        "  to Serial port",
+                        "Power: " + String(gnss.getPowerSaveMode()),
+                        "Press RESET to reboot");
+                for (uint32_t c = 0; c < 300000000; c++)
+                {
+                    if (ss.available())
+                    {
+                        Serial.write(ss.read());  // print anything comes in from the GPS
+                    }
+                }
+                state++;
+                break;
+        }
+    } while (state < 3);
+#endif
+}
+
+static void gpsCheck()
+{
+    SFE_UBLOX_GNSS gnss;
+
+    while(true)
+    {
+        if (gnss.begin(ss))
+        {
+            oled.Display("GPS  CHK",
+                    "       CHECKING",
+                    "Power: " + String(gnss.getPowerSaveMode()),
+                    "Press RESET to reboot");
+            break;
+        }
+    }
+
+    while (true) {}
 }
 
 static char *s_min_nn(uint32_t min_nnnnn, int high_precision)
@@ -702,17 +970,11 @@ static char *s_min_nn(uint32_t min_nnnnn, int high_precision)
 static String createLatAPRS(RawDegrees lat)
 {
     char str[20];
-    char n_s = 'N';
-
-    if (lat.negative)
-    {
-        n_s = 'S';
-    }
 
     // we like sprintf's float up-rounding.
     // but sprintf % may round to 60.00 -> 5360.00 (53° 60min is a wrong notation
     // ;)
-    sprintf(str, "%02d%s%c", lat.deg, s_min_nn(lat.billionths, 0), n_s);
+    sprintf(str, "%02d%s%c", lat.deg, s_min_nn(lat.billionths, 0), (lat.negative ? 'S' : 'N'));
     return String(str);
 }
 
@@ -720,31 +982,19 @@ static String createLatAPRSDAO(RawDegrees lat)
 {
     // round to 4 digits and cut the last 2
     char str[20];
-    char n_s = 'N';
-
-    if (lat.negative)
-    {
-        n_s = 'S';
-    }
 
     // we need sprintf's float up-rounding. Must be the same principle as in
     // aprs_dao(). We cut off the string to two decimals afterwards. but sprintf %
     // may round to 60.0000 -> 5360.0000 (53° 60min is a wrong notation ;)
-    sprintf(str, "%02d%s%c", lat.deg, s_min_nn(lat.billionths, 1 /* high precision */), n_s);
+    sprintf(str, "%02d%s%c", lat.deg, s_min_nn(lat.billionths, 1 /* high precision */), (lat.negative ? 'S' : 'N'));
     return String(str);
 }
 
 static String createLongAPRS(RawDegrees lng)
 {
     char str[20];
-    char e_w = 'E';
 
-    if (lng.negative)
-    {
-        e_w = 'W';
-    }
-
-    sprintf(str, "%03d%s%c", lng.deg, s_min_nn(lng.billionths, 0), e_w);
+    sprintf(str, "%03d%s%c", lng.deg, s_min_nn(lng.billionths, 0), (lng.negative ? 'W' : 'E'));
     return String(str);
 }
 
@@ -752,14 +1002,8 @@ static String createLongAPRSDAO(RawDegrees lng)
 {
     // round to 4 digits and cut the last 2
     char str[20];
-    char e_w = 'E';
 
-    if (lng.negative)
-    {
-        e_w = 'W';
-    }
-
-    sprintf(str, "%03d%s%c", lng.deg, s_min_nn(lng.billionths, 1 /* high precision */), e_w);
+    sprintf(str, "%03d%s%c", lng.deg, s_min_nn(lng.billionths, 1 /* high precision */), (lng.negative ? 'W' : 'E'));
     return String(str);
 }
 
@@ -770,11 +1014,10 @@ static String createAPRSDAO(RawDegrees lat, RawDegrees lng)
     // integer https://metacpan.org/dist/Ham-APRS-FAP/source/FAP.pm
     // http://www.aprs.org/aprs12/datum.txt
     //
-
     char str[10];
+
     // s_min_nn()'s high_precision parameter >= 2 ==> 1 char length
     sprintf(str, "!w%1s%1s!", s_min_nn(lat.billionths, 2), s_min_nn(lng.billionths, 2));
-
     return String(str);
 }
 

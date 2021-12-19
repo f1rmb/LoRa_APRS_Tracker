@@ -43,7 +43,7 @@ void OLEDDisplay::Init()
     m_display.setTextColor(WHITE);
     m_display.setTextSize(1);
     m_display.setCursor(0, 0);
-    m_display.print("LORA SENDER ");
+    m_display.print("LoRa APRS Tracker");
     m_display.ssd1306_command(SSD1306_SETCONTRAST);
     m_display.ssd1306_command(1);
     m_display.display();
@@ -106,11 +106,11 @@ void OLEDDisplay::displayLines(const String &header, const String &line1, const 
             m_display.println(line5);
         }
 
-        setCpuFrequencyMhz(160);
+        //setCpuFrequencyMhz(160);
         m_display.ssd1306_command(SSD1306_SETCONTRAST);
         m_display.ssd1306_command(1);
         m_display.display();
-        setCpuFrequencyMhz(80);
+        //setCpuFrequencyMhz(80);
     }
 
     delay(msPause);
