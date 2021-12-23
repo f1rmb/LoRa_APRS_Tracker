@@ -212,16 +212,18 @@ void setup()
 
     if (userBtn.isIdle() == false)
     {
-        gpsReset();
+        //gpsReset();
         //gpsCheck();
 
-        while (true) { }
+        //while (true) { }
     }
 
     oled.Display("INFO", "Waiting for Position");
 
     gParams.ResetDisplayTimeout(); // Enable OLED timeout
 }
+
+static bool oldLock = false;
 
 // cppcheck-suppress unusedFunction
 void loop()
@@ -243,13 +245,73 @@ void loop()
         while (ss.available() > 0)
         {
             char c = ss.read();
-            //Serial.print(c);
+
+            // DISPLAY NMEA until it locks
+            if (oldLock == false)
+            {
+                Serial.print(c);
+            }
             gps.encode(c);
         }
+#if 1
+        while (Serial.available() > 0)
+        {
+            char c = Serial.read();
+
+            if (c == 'f' || c == 'F')
+            {
+                Serial.println("FORCE");
+                gParams.forcePositionUpdate = true;
+            }
+            else if (c == 'r')
+            {
+                Serial.println("REBOOT");
+                ESP.restart();
+            }
+            else if(c == 'R')
+            {
+                SFE_UBLOX_GNSS gnss;
+
+                Serial.println("RESET GPS");
+
+                if (gnss.begin(ss))
+                {
+                    gnss.setUART1Output(COM_TYPE_NMEA); //Set the UART port to output NMEA only
+                    gnss.hardReset();
+                    delay(5000);
+                    if (gnss.begin(ss))
+                    {
+                        gnss.factoryReset();
+                        delay(3000); // takes more than one second... a loop to resync would be best
+                    }
+                }
+
+            }
+            // Serial.print(c);
+            //gps.encode(c);
+        }
+#endif
     }
 
     bool gps_time_update = gps.time.isUpdated();
     bool gps_loc_update  = gps.location.isUpdated();
+    bool gpsPosIsValid = gps.location.isValid();
+
+
+    if (gpsPosIsValid != oldLock)
+    {
+        Serial.println((gpsPosIsValid ? "*** GOT LOCK ***" : "*** LOCK LOST ***"));
+
+        oldLock = gpsPosIsValid;
+    }
+
+    if (gps_loc_update && gParams.forcePositionUpdate)
+    {
+        char buf[128];
+
+        sprintf(buf, "Lat: %f, Long: %f", gps.location.lat(), gps.location.lng());
+        Serial.println(buf);
+    }
 
     if (gps.time.isValid())
     {
@@ -455,6 +517,7 @@ void loop()
             delay(cfg.ptt.start_delay);
         }
 
+#if 0
         gParams.loraIsBusy = true;
         if (LoRa.beginPacket() != 0) // Ensure the LoRa module is in RX mode.
         {
@@ -472,6 +535,11 @@ void loop()
             gParams.forcePositionUpdate = true; // Try to resend on the next GPS update
             Serial.println("LoRa BUSY");
         }
+#else
+        Serial.print("*** => '");
+        Serial.print(data.c_str());
+        Serial.print("' ***");
+#endif
 
         if (cfg.smart_beacon.active)
         {
@@ -681,12 +749,14 @@ static void gpsConfiguration()
 //    pinMode(GPS_RX, INPUT);
     //digitalWrite(GPS_RX, PULLUP);
 
-
     ss.begin(9600, SERIAL_8N1, GPS_TX, GPS_RX);
 
-    if (gnss.begin(ss))
+    if (gnss.begin(ss) == false)
     {
-        gnss.powerSaveMode(true, 5000);
+        oled.Display("GPS ERROR", "Unable to", "initialize");
+
+        while (true) {}
+        //gnss.powerSaveMode(true, 5000);
         //gnss.softwareResetGNSSOnly();
         //gnss.hardReset();
         //delay(1000);
