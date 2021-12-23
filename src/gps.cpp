@@ -12,7 +12,10 @@
 GPSDevice::GPSDevice() :
 m_serialGPS(NULL),
 m_isConnected(false),
-m_fixType(0)
+m_fixType(0),
+m_wakeState(true),
+m_lastWakeTime(0),
+m_lastSleepTime(0)
 {
 }
 
@@ -198,7 +201,9 @@ float GPSDevice::LatLongToMeter(double lat_a, double lng_a, double lat_b, double
     double t3 = sin(a1) * sin(b1);
     double tt = acos(t1 + t2 + t3);
     if (std::isnan(tt))
+    {
         tt = 0.0; // Must have been the same point?
+    }
 
     return (float)(6366000 * tt);
 }
