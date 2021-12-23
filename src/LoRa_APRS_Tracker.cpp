@@ -3,7 +3,6 @@
 #include <LoRa.h>
 #include <OneButton.h>
 #include <TimeLib.h>
-//#include <TinyGPS++.h>
 #include <WiFi.h>
 #include <logger.h>
 
@@ -12,6 +11,7 @@
 #include "display.h"
 #include "pins.h"
 #include "power_management.h"
+#include "Deg2DDMMMM.h"
 
 static Configuration     cfg;
 static OLEDDisplay       oled;
@@ -26,14 +26,14 @@ static GPSDevice         gps;
 struct GlobalParameters
 {
         GlobalParameters() :
-            forcePositionUpdate(true),
+            sendPositionUpdate(true),
             nextBeaconTimeStamp(now()),
-            currentHeading(0),
-            previousHeading(0),
+            currentHeading(0.0),
+            previousHeading(0.0),
             rateLimitMessageText(0),
             lastTxLat(0.0),
-            lastTxLng(0.0),
-            lastTxdistance(0.0),
+            lastTxLong(0.0),
+            lastTxDistance(0),
             txInterval(60000L), // Initial 60 secs internal
             lastTxTime(millis()),
             speedZeroSent(0),
@@ -96,21 +96,21 @@ struct GlobalParameters
 #endif
         }
 
-        bool           forcePositionUpdate;
+        bool           sendPositionUpdate;
         time_t         nextBeaconTimeStamp;
-        float          currentHeading;
+        double         currentHeading;
         double         previousHeading;
-        unsigned int   rateLimitMessageText;
+        uint32_t       rateLimitMessageText;
         double         lastTxLat;
-        double         lastTxLng;
-        int32_t        lastTxdistance;
+        double         lastTxLong;
+        int32_t        lastTxDistance;
         uint32_t       txInterval;
         unsigned long  lastTxTime;
         int            speedZeroSent;
         bool           batteryIsConnected;
         String         batteryVoltage;
         String         batteryChargeCurrent;
-        volatile bool  loraIsBusy;
+        bool           loraIsBusy;
         bool           gpsIsSleeping;
         unsigned long  gpsSleepActionTime;
         unsigned long  lastUpdateTime;
@@ -127,27 +127,20 @@ struct GlobalParameters
 
 static GlobalParameters  gParams;
 
+static double batCurrent[10];
+static int batCurrentIndex = 0;
 
-//static void execSleep(uint32_t milliseconds);
+
+// Functions prototypes
 static void buttonClickCallback();
 static void loraTXDoneCallback();
 static void loadConfiguration();
 static void loraInit();
-//static void gpsInit();
-//static void gpsSuspend(bool suspend);
-//static void gpsReset();
-//static void gpsCheck();
+static String formatToDateString(time_t t);
+static String formatToTimeString(time_t t);
+static String getOnOff(bool state);
+static String PadWithZeros(unsigned int number, unsigned int width);
 
-
-static String createLatAPRS_N(double lat);
-static String createLongAPRS_N(double lng);
-static String createLatAPRSDAO_N(double lat);
-static String createLongAPRSDAO_N(double lng);
-static String createAPRSDAO_N(double lat, double lng);
-static String createDateString(time_t t);
-static String createTimeString(time_t t);
-static String getSmartBeaconState();
-static String padding(unsigned int number, unsigned int width);
 
 // cppcheck-suppress unusedFunction
 void setup()
@@ -187,7 +180,7 @@ void setup()
 
     loadConfiguration();
 
-    if (gps.Initialize((cfg.debug ? Serial : ss), (cfg.debug ? false : true)))
+    if (gps.Initialize((cfg.debug ? Serial : ss), (cfg.debug ? false : true)) == false)
     {
         oled.Display("GPS INIT", "Initialization failed");
         while (true) { }
@@ -212,8 +205,8 @@ void setup()
     userBtn.attachClick(buttonClickCallback);
     userBtn.tick();
 
-    logPrintlnI("Smart Beacon is " + getSmartBeaconState());
-    oled.Display("INFO", "Smart Beacon is " + getSmartBeaconState(), 1000);
+    logPrintlnI("Smart Beacon is " + getOnOff(cfg.smart_beacon.active));
+    oled.Display("INFO", "Smart Beacon is " + getOnOff(cfg.smart_beacon.active), 1000);
     logPrintlnI("setup done...");
 
     delay(500);
@@ -223,6 +216,9 @@ void setup()
     {
         //gpsReset();
         //gpsCheck();
+        oled.Display("GPS  RESET",
+                "Resetting...");
+
         gps.FactoryReset();
 
         oled.Display("GPS  RESET",
@@ -231,8 +227,6 @@ void setup()
                 "to factory settings.",
                 " It will take time",
                 "to acquire satellites", 5000);
-
-        //while (true) { }
     }
 
     oled.Display("INFO", "Waiting for Position");
@@ -249,7 +243,6 @@ void loop()
     if ((millis() - gParams.lastUpdateTime) >= 1000) // Update each 1 second
     {
         gParams.lastUpdateTime = millis();
-
 #if 0
         if (cfg.debug)
         {
@@ -276,34 +269,75 @@ void loop()
         }
 #endif
 
+        while (Serial.available() > 0)
+        {
+            char c = Serial.read();
 
-        //bool gps_time_update = gps.time.isUpdated();
-        bool hasPVT  = gps.GetPVT();
-        double currentLat = NAN;
-        double currentLng = NAN;
-        double currentHeading = NAN;
+            if (c == 'f' || c == 'F')
+            {
+                gParams.sendPositionUpdate = true;
+            }
+            else if (c == 'R')
+            {
+                Serial.println("GPS Factory Reset");
+                gps.FactoryReset();
+            }
+            else if (c == 'r')
+            {
+                ESP.restart();
+            }
+            else if (c == 'i' || c == 'I')
+            {
+                Serial.println("===================");
+                Serial.print("Index: ");
+                Serial.println(batCurrentIndex);
+                for (size_t i = 0; i < (sizeof(batCurrent) / sizeof(batCurrent[0])); i++)
+                {
+                    char buf[32];
+
+                    sprintf(buf, "I: %f", batCurrent[i]);
+                    Serial.println(buf);
+                }
+                Serial.println("===================\n");
+            }
+        }
+
+
+
+        bool gpsHasFix          = (gps.HasFix() && gps.GetPVT());
+        double currentLat       = NAN;
+        double currentLong      = NAN;
+        double currentHeading   = NAN;
         double currentAltInFeet = NAN;
         double currentSpeedKnot = NAN;
-        struct tm t;
 
 
         //if (gps.time.isValid())
-        if (hasPVT)
+        if (gpsHasFix)
         {
             currentLat       = gps.GetLatitude();
-            currentLng       = gps.GetLongitude();
+            currentLong      = gps.GetLongitude();
             currentHeading   = gps.GetHeading();
-            currentAltInFeet = gps.GetAltitudeInFeet();
-            currentSpeedKnot = gps.GetSpeedKnot();
+            currentAltInFeet = gps.GetAltitudeFT();
+            currentSpeedKnot = gps.GetSpeedKT();
+            double altitude  = gps.GetAltitude();
+            double speedms   = gps.GetSpeedMPS();
+
+            char buf[128];
+            sprintf(buf, "Lat: %f  Long: %f  Heading: %f  Alt(Ft): %f/%f  Speed(knot): %f/%f",
+                    currentLat, currentLong, currentHeading,
+                    currentAltInFeet, altitude, currentSpeedKnot, speedms);
+            Serial.println(buf);
 
 
-            if (gps.GetDateAndTime(t))
+            struct tm dt;
+            if (gps.GetDateAndTime(dt))
             {
-                setTime(t.tm_hour, t.tm_min, t.tm_sec, t.tm_mday, t.tm_mon, t.tm_year);
+                setTime(mktime(&dt)); // Update the RTC
 
                 if (gParams.nextBeaconTimeStamp <= now())
                 {
-                    gParams.forcePositionUpdate = true;
+                    gParams.sendPositionUpdate = true;
 
                     if (cfg.smart_beacon.active)
                     {
@@ -314,7 +348,7 @@ void loop()
                     else
                     {
                         // enforce message text every n's cfg.beacon.timeout frame
-                        if (cfg.beacon.timeout * gParams.rateLimitMessageText > 30)
+                        if ((cfg.beacon.timeout * gParams.rateLimitMessageText) > 30)
                         {
                             gParams.rateLimitMessageText = 0;
                         }
@@ -323,42 +357,48 @@ void loop()
             }
         }
 
-
 #ifdef TTGO_T_Beam_V1_0
         unsigned long m = millis();
-        // Update the battery every 60 seconds
-        if ((gParams.batteryLastCheckTime == 0) || ((m - gParams.batteryLastCheckTime) > 60000))
+        // Update the battery every 60 seconds, that's way enough
+        if ((gParams.batteryLastCheckTime == 0) || ((m - gParams.batteryLastCheckTime) >= 60000))
         {
             gParams.batteryIsConnected = pm.isBatteryConnected();
             gParams.batteryLastCheckTime = m;
 
             if (gParams.batteryIsConnected)
             {
+                double I = pm.getBatteryChargeDischargeCurrent();
+
+                batCurrent[batCurrentIndex] = I;
+
                 gParams.batteryVoltage       = String(pm.getBatteryVoltage(), 2);
-                gParams.batteryChargeCurrent = String(pm.getBatteryChargeDischargeCurrent(), 0);
+                gParams.batteryChargeCurrent = String(I, 0);
+
+                batCurrentIndex = (batCurrentIndex + 1) % 10;
             }
         }
 #endif
 
-        if ((gParams.forcePositionUpdate == false) && hasPVT && cfg.smart_beacon.active)
+        if ((gParams.sendPositionUpdate == false) && gpsHasFix && cfg.smart_beacon.active)
         {
-            uint32_t lastTx = millis() - gParams.lastTxTime;
+            unsigned long lastTx = (millis() - gParams.lastTxTime);
 
             gParams.currentHeading = currentHeading;
-            gParams.lastTxdistance = gps.LatLongToMeter(currentLat, currentLng, gParams.lastTxLat, gParams.lastTxLng);
-            //TinyGPSPlus::distanceBetween(gps.location.lat(), gps.location.lng(), gParams.lastTxLat, gParams.lastTxLng);
+            gParams.lastTxDistance = int32_t(gps.DistanceBetweenTwoCoords(currentLat, currentLong, gParams.lastTxLat, gParams.lastTxLong));
+
+            //TinyGPSPlus::distanceBetween(gps.location.lat(), gps.location.long(), gParams.lastTxLat, gParams.lastTxLng);
 
             if (lastTx >= gParams.txInterval)
             {
                 // Trigger Tx Tracker when Tx interval is reach
                 // Will not Tx if stationary bcos speed < 5 and lastTxDistance < 20
-                if (gParams.lastTxdistance > 20)
+                if (gParams.lastTxDistance > 20)
                 {
-                    gParams.forcePositionUpdate = true;
+                    gParams.sendPositionUpdate = true;
                 }
             }
 
-            if (!gParams.forcePositionUpdate)
+            if (gParams.sendPositionUpdate == false)
             {
                 // Get headings and heading delta
                 double headingDelta = fabs(gParams.previousHeading - gParams.currentHeading);
@@ -366,76 +406,71 @@ void loop()
                 if (lastTx > (cfg.smart_beacon.min_bcn * 1000))
                 {
                     // Check for heading more than 25 degrees
-                    if ((headingDelta > cfg.smart_beacon.turn_min) && (gParams.lastTxdistance > cfg.smart_beacon.min_tx_dist))
+                    if ((headingDelta > cfg.smart_beacon.turn_min) && (gParams.lastTxDistance > cfg.smart_beacon.min_tx_dist))
                     {
-                        gParams.forcePositionUpdate = true;
+                        gParams.sendPositionUpdate = true;
                     }
                 }
             }
         }
 
-        if (gParams.forcePositionUpdate && hasPVT)
+        // Time to send an APRS frame
+        if (gParams.sendPositionUpdate && gpsHasFix)
         {
-            APRSMessage msg;
-            String      lat;
-            String      lng;
-            String      dao;
+            APRSMessage        msgStr;
 
-            gParams.forcePositionUpdate = false;
+            gParams.sendPositionUpdate = false;
             gParams.nextBeaconTimeStamp = now() + (cfg.smart_beacon.active ? cfg.smart_beacon.slow_rate : (cfg.beacon.timeout * SECS_PER_MIN));
 
-            msg.setSource(cfg.callsign);
-            msg.setDestination("APLT00-1");
-
-            if (cfg.enhance_precision == false)
-            {
-                lat = createLatAPRS_N(currentLat);
-                lng = createLongAPRS_N(currentLng);
-            }
-            else
-            {
-                lat = createLatAPRSDAO_N(currentLat);
-                lng = createLongAPRSDAO_N(currentLng);
-                dao = createAPRSDAO_N(currentLat, currentLng);
-            }
-
-
-            String alt;
-            int    alt_int = std::max(-99999, std::min(999999, (int)currentAltInFeet));
+            msgStr.setSource(cfg.callsign);
+            msgStr.setDestination("APLT00-1");
 
 #if 1
-            alt = String("/A=") + (alt_int < 0 ? "-" : "") + padding((unsigned int)abs(alt_int), ((alt_int < 0) ? 5 : 6));
-            //Serial.println(alt.c_str());
-#else
-            if (alt_int < 0)
+            Deg2DDMMMMPosition pLat, pLong;
+            char               latBuf[32];
+            char               longBuf[32];
+
+            Deg2DDMMMM::Convert(pLat, currentLat, cfg.enhance_precision);
+            Deg2DDMMMM::Convert(pLong, currentLong, cfg.enhance_precision);
+
+            String             latStr(Deg2DDMMMM::Format(latBuf, pLat));
+            String             longStr(Deg2DDMMMM::Format(longBuf, pLong));
+            String             daoStr;
+
+            if (cfg.enhance_precision)
             {
-                alt = "/A=-" + padding(alt_int * -1, 5);
-            }
-            else
-            {
-                alt = "/A=" + padding(alt_int, 6);
+                char daoBuf[16];
+
+                daoStr = String(Deg2DDMMMM::DAO(daoBuf, pLat, pLong));
             }
 #endif
 
-            String course_and_speed;
-            int    speed_int = std::max(0, std::min(999, (int)currentSpeedKnot));
+            String altStr;
+            int    altValue = std::max(-99999, std::min(999999, (int)currentAltInFeet));
+
+            altStr = String("/A=") + (altValue < 0 ? "-" : "") + PadWithZeros((unsigned int)abs(altValue), ((altValue < 0) ? 5 : 6));
+
+
+            String courseAndSpeedStr;
+            int    speedValue = std::max(0, std::min(999, (int)currentSpeedKnot));
 
             if (gParams.speedZeroSent < 3)
             {
-                String speed      = padding(speed_int, 3);
-                int    course_int = std::max(0, std::min(360, (int)currentHeading));
+                String speedStr    = PadWithZeros(speedValue, 3);
+                int    courseValue = std::max(0, std::min(360, (int)currentHeading));
 
                 /* course in between 1..360 due to aprs spec */
-                if (course_int == 0)
+                if (courseValue == 0)
                 {
-                    course_int = 360;
+                    courseValue = 360;
                 }
 
-                String course(padding(course_int, 3));
-                course_and_speed = course + "/" + speed;
+                String courseStr(PadWithZeros(courseValue, 3));
+
+                courseAndSpeedStr = courseStr + "/" + speedStr;
             }
 
-            if (speed_int == 0)
+            if (speedValue == 0)
             {
                 /* speed is 0.
                  * we send 3 packets with speed zero (so our friends know we stand still).
@@ -454,7 +489,7 @@ void loop()
             }
 
 
-            String aprsmsg("!" + lat + cfg.beacon.overlay + lng + cfg.beacon.symbol + course_and_speed + alt);
+            String aprsmsg("!" + latStr + cfg.beacon.overlay + longStr + cfg.beacon.symbol + courseAndSpeedStr + altStr);
 
             // message_text every 10's packet (i.e. if we have beacon rate 1min at high
             // speed -> every 10min). May be enforced above (at expirey of smart beacon
@@ -471,15 +506,15 @@ void loop()
             }
 
 
-            if (cfg.enhance_precision && (dao.length() > 0))
+            if (cfg.enhance_precision && (daoStr.length() > 0))
             {
-                aprsmsg += " " + dao;
+                aprsmsg += " " + daoStr;
             }
 
-            //aprsmsg.trim();
-            msg.getAPRSBody()->setData(aprsmsg);
-            String data(msg.encode());
+            msgStr.getBody()->setData(aprsmsg);
+            String data(msgStr.encode());
             logPrintlnD(data);
+
 #warning SPLIT
 #if 0
             oled.Display("<< TX >>", data);
@@ -499,13 +534,15 @@ void loop()
 
             if (cfg.ptt.active)
             {
-                digitalWrite(cfg.ptt.io_pin, cfg.ptt.reverse ? LOW : HIGH);
+                digitalWrite(cfg.ptt.io_pin, (cfg.ptt.reverse ? LOW : HIGH));
                 delay(cfg.ptt.start_delay);
             }
 
-            gParams.loraIsBusy = true;
+#if 1
             if (LoRa.beginPacket() != 0) // Ensure the LoRa module is in RX mode.
             {
+                gParams.loraIsBusy = true;
+
                 // Header:
                 LoRa.write('<');
                 LoRa.write(0xFF);
@@ -513,51 +550,65 @@ void loop()
                 // APRS Data:
                 LoRa.write((const uint8_t *)data.c_str(), data.length());
                 LoRa.endPacket();
-                Serial.println("LoRa send");
+
+                Serial.println("LoRa sent");
             }
             else
             {
-                gParams.forcePositionUpdate = true; // Try to resend on the next GPS update
-                Serial.println("LoRa BUSY");
+                gParams.sendPositionUpdate = true; // Try to resend on the next GPS update
+                Serial.println("LoRa IS BUSY");
+            }
+#endif
+            if (gParams.loraIsBusy)
+            {
+                Serial.print("=====> '");
+                Serial.println(data.c_str());
             }
 
             if (cfg.smart_beacon.active)
             {
                 gParams.lastTxLat       = currentLat;
-                gParams.lastTxLng       = currentLng;
+                gParams.lastTxLong      = currentLong;
                 gParams.previousHeading = gParams.currentHeading;
-                gParams.lastTxdistance  = 0.0;
+                gParams.lastTxDistance  = 0;
                 gParams.lastTxTime      = millis();
             }
 
             if (cfg.ptt.active)
             {
                 delay(cfg.ptt.end_delay);
-                digitalWrite(cfg.ptt.io_pin, cfg.ptt.reverse ? HIGH : LOW);
+                digitalWrite(cfg.ptt.io_pin, (cfg.ptt.reverse ? HIGH : LOW));
             }
         }
 
         //if (gps_time_update)
         {
             oled.Display(cfg.callsign,
-                    createDateString(now()) + " " + createTimeString(now()),
-                    String("Sats: ") + gps.GetSatellites() + " HDOP: " + gps.GetHDOP(),
-                    String("Nxt Bcn: ") + (cfg.smart_beacon.active ? "~" : "") + createTimeString(gParams.nextBeaconTimeStamp),
+                    formatToDateString(now()) + " " + formatToTimeString(now()),
+                    String("Sats: ") + (gpsHasFix ? String(gps.GetSatellites()) : "-") + " HDOP: " + (gpsHasFix ? String(gps.GetHDOP()) : "--.--"),
+                    String("Nxt Bcn: ") + (gpsHasFix ? (cfg.smart_beacon.active ? "~" : "") + formatToTimeString(gParams.nextBeaconTimeStamp) : "--:--:--"),
                     (gParams.batteryIsConnected ? (String("Bat: ") + gParams.batteryVoltage + "V, " + gParams.batteryChargeCurrent + "mA") : "Powered via USB"),
-                    String("Smart Beacon: " + getSmartBeaconState()));
+                    String("Smart Beacon: " + getOnOff(cfg.smart_beacon.active)));
+
+            Serial.println(cfg.callsign);
+            Serial.println(formatToDateString(now()) + " " + formatToTimeString(now()));
+            Serial.println(String("Sats: ") + String(gpsHasFix ? String(gps.GetSatellites()) : "-") + " HDOP: " + (gpsHasFix ? String(gps.GetHDOP()) : "--.--"));
+            Serial.println(String("Nxt Bcn: ") + (gpsHasFix ? (cfg.smart_beacon.active ? "~" : "") + formatToTimeString(gParams.nextBeaconTimeStamp) : "--:--:--"));
+            Serial.println((gParams.batteryIsConnected ? (String("Bat: ") + gParams.batteryVoltage + "V, " + gParams.batteryChargeCurrent + "mA") : "Powered via USB"));
+            Serial.println(String("Smart Beacon: " + getOnOff(cfg.smart_beacon.active)));
 
             if (cfg.smart_beacon.active)
             {
                 // Change the Tx internal based on the current speed
-                int curr_speed = (int)gps.GetSpeedKMH();
+                int currentSpeed = (int)gps.GetSpeedKPH();
 
-                if (curr_speed < cfg.smart_beacon.slow_speed)
+                if (currentSpeed < cfg.smart_beacon.slow_speed)
                 {
-                    gParams.txInterval = cfg.smart_beacon.slow_rate * 1000;
+                    gParams.txInterval = (cfg.smart_beacon.slow_rate * 1000);
                 }
-                else if (curr_speed > cfg.smart_beacon.fast_speed)
+                else if (currentSpeed > cfg.smart_beacon.fast_speed)
                 {
-                    gParams.txInterval = cfg.smart_beacon.fast_rate * 1000;
+                    gParams.txInterval = (cfg.smart_beacon.fast_rate * 1000);
                 }
                 else
                 {
@@ -571,7 +622,7 @@ void loop()
                      * would lead to decrease of beacon rate in between 5 to 20 km/h. what
                      * is even below the slow speed rate.
                      */
-                    gParams.txInterval = std::min(cfg.smart_beacon.slow_rate, cfg.smart_beacon.fast_speed * cfg.smart_beacon.fast_rate / curr_speed) * 1000;
+                    gParams.txInterval = std::min(cfg.smart_beacon.slow_rate, cfg.smart_beacon.fast_speed * cfg.smart_beacon.fast_rate / currentSpeed) * 1000;
                 }
             }
         }
@@ -600,7 +651,7 @@ void loop()
             hasFix = gps.location.isValid();
             char buffer[64];
 
-            snprintf(buffer, sizeof(buffer), "%s force: %d", (hasFix ? "FIX" : "NOFIX"), gParams.forcePositionUpdate);
+            snprintf(buffer, sizeof(buffer), "%s force: %d", (hasFix ? "FIX" : "NOFIX"), gParams.sendPositionUpdate);
 
             //Serial.println(hasFix ? "FIX" : "NOFIX");
             Serial.println(buffer);
@@ -664,7 +715,7 @@ static void buttonClickCallback()
     if (cfg.beacon.button_tx)
     {
         // attach TX action to user button (defined by BUTTON_PIN)
-        gParams.forcePositionUpdate = true;
+        gParams.sendPositionUpdate = true;
     }
 }
 
@@ -714,478 +765,22 @@ static void loraInit()
     oled.Display("INFO", "LoRa init done!", 2000);
 }
 
-#if 0
-static void gpsSuspend(bool suspend)
+static String formatToDateString(time_t t)
 {
-    SFE_UBLOX_GNSS gnss;
-
-    if (gnss.begin(ss))
-    {
-        gnss.powerSaveMode(suspend);
-        gParams.gpsIsSleeping = suspend;
-    }
-}
-#endif
-
-#if 0
-static void gpsInit()
-{
-    bool connected = false;
-
-    oled.Display("GPS INIT", "Try to connect GPS");
-
-    if (cfg.debug)
-    {
-        serialGPS = &Serial;
-    }
-    else
-    {
-        serialGPS = &ss;
-        serialGPS->begin(GPS_BAUDRATE, SERIAL_8N1, GPS_TX, GPS_RX);
-    }
-
-    for (int i = 0; (i < 3) && !(connected = gnss.begin(*serialGPS)); i++)
-    {
-         delay(500);
-    }
-
-    if (connected)
-    {
-        // Configure the U-Blox
-        if (gnss.setUART1Output(COM_TYPE_UBX, 1000) && gnss.setNavigationFrequency(1, 1000))
-        {
-            return; // Success
-        }
-    }
-
-    oled.Display("GPS ERROR", "Init failed");
-    while (true) { }
-}
-#endif
-
-
-#if 0
-static void gpsReset()
-{
-    SFE_UBLOX_GNSS gnss;
-    uint8_t state = 0;
-
-#if 1
-    do
-    {
-        switch (state)
-        {
-            case 0:
-                while(true)
-                {
-                    if (gnss.begin(ss))
-                    {
-                        oled.Display("GPS  RESET", emptyString, "Connected to GPS", 2000);
-                        gnss.setUART1Output(COM_TYPE_NMEA); //Set the UART port to output NMEA only
-                        gnss.saveConfiguration(); //Save the current settings to flash and BBR
-
-                        oled.Display("GPS  RESET", emptyString, "GPS Configuration", 2000);
-                        gnss.disableNMEAMessage(UBX_NMEA_GLL, COM_PORT_UART1);
-                        gnss.disableNMEAMessage(UBX_NMEA_GSA, COM_PORT_UART1);
-                        gnss.disableNMEAMessage(UBX_NMEA_GSV, COM_PORT_UART1);
-                        gnss.disableNMEAMessage(UBX_NMEA_VTG, COM_PORT_UART1);
-                        gnss.disableNMEAMessage(UBX_NMEA_RMC, COM_PORT_UART1);
-                        gnss.enableNMEAMessage(UBX_NMEA_GGA, COM_PORT_UART1);
-                        gnss.saveConfiguration(); //Save the current settings to flash and BBR
-                        break;
-                    }
-
-                    oled.Display("GPS  RESET", emptyString, "Waiting for GPS", 1000);
-                }
-
-                oled.Display("GPS  RESET", emptyString, "GPS config. saved", 2000);
-                state++;
-                break;
-
-            case 1:
-                oled.Display("GPS  RESET", emptyString, "Hard-Reset cold start");
-                gnss.hardReset();
-                delay(3000);
-                if (gnss.begin(ss))
-                {
-                    oled.Display("GPS  RESET", emptyString, "Hard-Reset SUCCESS");
-                    state++;
-                }
-                else
-                {
-                    oled.Display("GPS  RESET", emptyString, "!! No Response !!", "Starting over");
-                    state = 0;
-                }
-                break;
-
-            case 2:
-                oled.Display("GPS  RESET", emptyString, "Factory Reset");
-                gnss.factoryReset();
-                delay(3000); // takes more than one second... a loop to resync would be best
-
-#if 0
-                if (gnss.powerSaveMode(true) == false)
-                {
-                    oled.Display("GPS  RESET", emptyString, "power save failed");
-
-                    while (true) {}
-                }
-                gnss.saveConfiguration();
-#endif
-
-
-                if (gnss.begin(ss))
-                {
-                    oled.Display("GPS  RESET",
-                            "      SUCCESS",
-                            " GPS has been reset",
-                            "to factory settings.",
-                            " It will take time",
-                            "to acquire satellites", 5000);
-                    state++;
-                }
-                else
-                {
-                    oled.Display("GPS  RESET", emptyString, "!! No Response !!", "Starting over");
-                    state = 0;
-                }
-                break;
-
-            case 3:
-                oled.Display("GPS  RESET",
-                        "       TESTING",
-                        "Outputing GPS frames",
-                        "  to Serial port",
-                        "Power: " + String(gnss.getPowerSaveMode()),
-                        "Press RESET to reboot");
-                for (uint32_t c = 0; c < 300000000; c++)
-                {
-                    if (ss.available())
-                    {
-                        Serial.write(ss.read());  // print anything comes in from the GPS
-                    }
-                }
-                state++;
-                break;
-        }
-    } while (state < 4);
-#else
-    do
-    {
-        switch (state)
-        {
-            case 0:
-                while(true)
-                {
-                    if (gnss.begin(ss))
-                    {
-                        oled.Display("GPS  RESET", emptyString, "Connected to GPS", 2000);
-                        gnss.setUART1Output(COM_TYPE_NMEA); //Set the UART port to output NMEA only
-                        gnss.saveConfiguration(); //Save the current settings to flash and BBR
-
-                        oled.Display("GPS  RESET", emptyString, "GPS Configuration", 2000);
-                        gnss.disableNMEAMessage(UBX_NMEA_GLL, COM_PORT_UART1);
-                        gnss.disableNMEAMessage(UBX_NMEA_GSA, COM_PORT_UART1);
-                        gnss.disableNMEAMessage(UBX_NMEA_GSV, COM_PORT_UART1);
-                        gnss.disableNMEAMessage(UBX_NMEA_VTG, COM_PORT_UART1);
-                        gnss.disableNMEAMessage(UBX_NMEA_RMC, COM_PORT_UART1);
-                        gnss.disableNMEAMessage(UBX_NMEA_TXT, COM_PORT_UART1);
-                        gnss.enableNMEAMessage(UBX_NMEA_GGA, COM_PORT_UART1);
-                        //gnss.powerSaveMode(true);
-                        gnss.saveConfiguration(); //Save the current settings to flash and BBR
-                        break;
-                    }
-
-                    oled.Display("GPS  RESET", emptyString, "Waiting for GPS", 1000);
-                }
-
-                oled.Display("GPS  RESET", emptyString, "GPS config. saved", 2000);
-                state++;
-                break;
-
-            case 1:
-                oled.Display("GPS  RESET", emptyString, "Hard-Reset cold start");
-                gnss.hardReset();
-                delay(3000);
-                if (gnss.begin(ss))
-                {
-                    oled.Display("GPS  RESET", emptyString, "Hard-Reset SUCCESS");
-                    state++;
-                }
-                else
-                {
-                    oled.Display("GPS  RESET", emptyString, "!! No Response !!", "Starting over");
-                    state = 0;
-                }
-                break;
-
-#if 0
-            case 2:
-                oled.Display("GPS  RESET", emptyString, "Factory Reset");
-                gnss.factoryReset();
-                delay(3000); // takes more than one second... a loop to resync would be best
-
-#if 0
-                if (gnss.powerSaveMode(true) == false)
-                {
-                    oled.Display("GPS  RESET", emptyString, "power save failed");
-
-                    while (true) {}
-                }
-                gnss.saveConfiguration();
-#endif
-
-
-                if (gnss.begin(ss))
-                {
-                    oled.Display("GPS  RESET",
-                            "      SUCCESS",
-                            " GPS has been reset",
-                            "to factory settings.",
-                            " It will take time",
-                            "to acquire satellites", 5000);
-                    state++;
-                }
-                else
-                {
-                    oled.Display("GPS  RESET", emptyString, "!! No Response !!", "Starting over");
-                    state = 0;
-                }
-                break;
-#endif
-
-            case 2:
-                oled.Display("GPS  RESET",
-                        "       TESTING",
-                        "Outputing GPS frames",
-                        "  to Serial port",
-                        "Power: " + String(gnss.getPowerSaveMode()),
-                        "Press RESET to reboot");
-                for (uint32_t c = 0; c < 300000000; c++)
-                {
-                    if (ss.available())
-                    {
-                        Serial.write(ss.read());  // print anything comes in from the GPS
-                    }
-                }
-                state++;
-                break;
-        }
-    } while (state < 3);
-#endif
-}
-#endif
-
-#if 0
-static void gpsCheck()
-{
-    SFE_UBLOX_GNSS gnss;
-
-    while(true)
-    {
-        if (gnss.begin(ss))
-        {
-            oled.Display("GPS  CHK",
-                    "       CHECKING",
-                    "Power: " + String(gnss.getPowerSaveMode()),
-                    "Press RESET to reboot");
-            break;
-        }
-    }
-
-    while (true) {}
-}
-#endif
-
-static char *s_min_nn(char *buf, uint32_t min_nnnnn, int high_precision)
-{
-    /* min_nnnnn: RawDegrees billionths is uint32_t by definition and is n'telth
-     * degree (-> *= 6 -> nn.mmmmmm minutes)
-     *  high_precision:
-     *     0: round at decimal position 2.
-     *     1: round at decimal position 4.
-     *     2: return decimal position 3-4
-     * as base91 encoded char
-     */
-    //static char buf[6];
-
-    min_nnnnn = min_nnnnn * 0.006;
-
-    if (high_precision)
-    {
-        if ((min_nnnnn % 10) >= 5 && min_nnnnn < 6000000 - 5)
-        {
-            // round up. Avoid overflow (59.999999 should never become 60.0 or more)
-            min_nnnnn = min_nnnnn + 5;
-        }
-
-    }
-    else
-    {
-        if ((min_nnnnn % 1000) >= 500 && min_nnnnn < (6000000 - 500))
-        {
-            // round up. Avoid overflow (59.9999 should never become 60.0 or more)
-            min_nnnnn = min_nnnnn + 500;
-        }
-    }
-
-    if (high_precision < 2)
-    {
-        sprintf(buf, "%02u.%02u", (unsigned int)((min_nnnnn / 100000) % 100), (unsigned int)((min_nnnnn / 1000) % 100));
-    }
-    else
-    {
-        sprintf(buf, "%c", (char)((min_nnnnn % 1000) / 11) + 33);
-    }
-
-    // Like to verify? type in python for i.e. RawDegrees billions 566688333: i =
-    // 566688333; "%c" % (int(((i*.0006+0.5) % 100)/1.1) +33)
-    return buf;
+    return String(PadWithZeros(day(t), 2) + "." + PadWithZeros(month(t), 2) + "." + PadWithZeros(year(t), 4));
 }
 
-static String createLatAPRS_N(double lat)
+static String formatToTimeString(time_t t)
 {
-    char str[20];
-    float aLat = fabs(lat);
-    uint32_t degrees = int(aLat);
-    uint32_t minutes = int((aLat - degrees) * 60);
-    uint32_t seconds = int(aLat - degrees - minutes / 60) * 3600;
-
-    sprintf(str, "%02u%02u.%02u%c", degrees, minutes, seconds, (std::signbit(lat) ? 'S' : 'N'));
-    return String(str);
+    return String(PadWithZeros(hour(t), 2) + "." + PadWithZeros(minute(t), 2) + "." + PadWithZeros(second(t), 2));
 }
 
-static String createLongAPRS_N(double lng)
+static String getOnOff(bool state)
 {
-    char str[20];
-    float aLng = fabs(lng);
-    uint32_t degrees = int(aLng);
-    uint32_t minutes = int((aLng - degrees) * 60);
-    uint32_t seconds = int(aLng - degrees - minutes / 60) * 3600;
-
-    sprintf(str, "%03u%02u.%02u%c", degrees, minutes, seconds, (std::signbit(lng) ? 'W' : 'E'));
-    return String(str);
+    return String(state ? "On" : "Off");
 }
 
-#if 0
-static String createLatAPRS(RawDegrees lat)
-{
-    char str[20];
-
-    // we like sprintf's float up-rounding.
-    // but sprintf % may round to 60.00 -> 5360.00 (53° 60min is a wrong notation
-    // ;)
-    sprintf(str, "%02d%s%c", lat.deg, s_min_nn(lat.billionths, 0), (lat.negative ? 'S' : 'N'));
-    return String(str);
-}
-
-static String createLongAPRS(RawDegrees lng)
-{
-    char str[20];
-
-    sprintf(str, "%03d%s%c", lng.deg, s_min_nn(lng.billionths, 0), (lng.negative ? 'W' : 'E'));
-    return String(str);
-}
-#endif
-
-#if 1
-static String createLatAPRSDAO_N(double lat)
-{
-    // round to 4 digits and cut the last 2
-    char str[20];
-    float aLat = fabs(lat);
-    uint32_t degrees = int(aLat);
-    uint32_t minutes = int((aLat - degrees) * 60);
-    uint32_t seconds = int(aLat - degrees - minutes / 60) * 3600;
-
-    // we need sprintf's float up-rounding. Must be the same principle as in
-    // aprs_dao(). We cut off the string to two decimals afterwards. but sprintf %
-    // may round to 60.0000 -> 5360.0000 (53° 60min is a wrong notation ;)
-    sprintf(str, "%02u%02u.%02u%c", degrees, minutes, seconds, (std::signbit(lat) ? 'S' : 'N'));
-    return String(str);
-}
-
-static String createLongAPRSDAO_N(double lng)
-{
-    // round to 4 digits and cut the last 2
-    char str[20];
-    float aLng = fabs(lng);
-    uint32_t degrees = int(aLng);
-    uint32_t minutes = int((aLng - degrees) * 60);
-    uint32_t seconds = int(aLng - degrees - minutes / 60) * 3600;
-
-    sprintf(str, "%03u%02u.%02u%c", degrees, minutes, seconds, (std::signbit(lng) ? 'W' : 'E'));
-    return String(str);
-}
-
-static String createAPRSDAO_N(double lat, double lng)
-{
-    // !DAO! extension, use Base91 format for best precision
-    // /1.1 : scale from 0-99 to 0-90 for base91, int(... + 0.5): round to nearest
-    // integer https://metacpan.org/dist/Ham-APRS-FAP/source/FAP.pm
-    // http://www.aprs.org/aprs12/datum.txt
-    //
-    char str[10];
-    char bufLat[32];
-    char bufLng[32];
-
-    // s_min_nn()'s high_precision parameter >= 2 ==> 1 char length
-    ///sprintf(str, "!w%1s%1s!", s_min_nn(bufLat, lat.billionths, 2), s_min_nn(bufLng, lng.billionths, 2));
-    return String(str);
-}
-#else
-static String createLatAPRSDAO(RawDegrees lat)
-{
-    // round to 4 digits and cut the last 2
-    char str[20];
-
-    // we need sprintf's float up-rounding. Must be the same principle as in
-    // aprs_dao(). We cut off the string to two decimals afterwards. but sprintf %
-    // may round to 60.0000 -> 5360.0000 (53° 60min is a wrong notation ;)
-    sprintf(str, "%02d%s%c", lat.deg, s_min_nn(lat.billionths, 1 /* high precision */), (lat.negative ? 'S' : 'N'));
-    return String(str);
-}
-
-static String createLongAPRSDAO(RawDegrees lng)
-{
-    // round to 4 digits and cut the last 2
-    char str[20];
-
-    sprintf(str, "%03d%s%c", lng.deg, s_min_nn(lng.billionths, 1 /* high precision */), (lng.negative ? 'W' : 'E'));
-    return String(str);
-}
-
-static String createAPRSDAO(RawDegrees lat, RawDegrees lng)
-{
-    // !DAO! extension, use Base91 format for best precision
-    // /1.1 : scale from 0-99 to 0-90 for base91, int(... + 0.5): round to nearest
-    // integer https://metacpan.org/dist/Ham-APRS-FAP/source/FAP.pm
-    // http://www.aprs.org/aprs12/datum.txt
-    //
-    char str[10];
-
-    // s_min_nn()'s high_precision parameter >= 2 ==> 1 char length
-    sprintf(str, "!w%1s%1s!", s_min_nn(lat.billionths, 2), s_min_nn(lng.billionths, 2));
-    return String(str);
-}
-#endif
-
-static String createDateString(time_t t)
-{
-    return String(padding(day(t), 2) + "." + padding(month(t), 2) + "." + padding(year(t), 4));
-}
-
-static String createTimeString(time_t t)
-{
-    return String(padding(hour(t), 2) + "." + padding(minute(t), 2) + "." + padding(second(t), 2));
-}
-
-static String getSmartBeaconState()
-{
-    return String(cfg.smart_beacon.active ? "On" : "Off");
-}
-
-static String padding(unsigned int number, unsigned int width)
+static String PadWithZeros(unsigned int number, unsigned int width)
 {
     char buffer[64];
 

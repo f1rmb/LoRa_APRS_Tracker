@@ -43,9 +43,6 @@ bool GPSDevice::Initialize(HardwareSerial &serial, bool doBegin)
         if (setUBXMode())
         {
             return true;
-
-            m_wakeState = true;
-            m_lastWakeTime = millis();
         }
     }
 
@@ -113,24 +110,25 @@ void GPSDevice::SetWake(bool on)
 
 bool GPSDevice::GetPVT()
 {
-    return (m_gnss.getPVT());
+    return (m_gnss.getPVT() && (m_gnss.getInvalidLlh() == false));
 }
 
 bool GPSDevice::GetDateAndTime(struct tm &t)
 {
-    if (m_gnss.getTimeValid() && m_gnss.getConfirmedTime())
+    if (m_gnss.getTimeValid() && m_gnss.getTimeFullyResolved())
     {
         /* Convert to unix time
-        The Unix epoch (or Unix time or POSIX time or Unix timestamp) is the number of seconds that have elapsed since January
-        1, 1970 (midnight UTC/GMT), not counting leap seconds (in ISO 8601: 1970-01-01T00:00:00Z).
+         *  The Unix epoch (or Unix time or POSIX time or Unix timestamp) is the number of seconds that have elapsed
+         *  since January 1, 1970 (midnight UTC/GMT), not counting leap seconds (in ISO 8601: 1970-01-01T00:00:00Z).
          */
-        t.tm_sec = m_gnss.getSecond(0);
-        t.tm_min = m_gnss.getMinute(0);
-        t.tm_hour = m_gnss.getHour(0);
-        t.tm_mday = m_gnss.getDay(0);
-        t.tm_mon = m_gnss.getMonth(0) - 1;
-        t.tm_year = m_gnss.getYear(0) - 1900;
+        t.tm_sec   = m_gnss.getSecond(0);
+        t.tm_min   = m_gnss.getMinute(0);
+        t.tm_hour  = m_gnss.getHour(0);
+        t.tm_mday  = m_gnss.getDay(0);
+        t.tm_mon   = m_gnss.getMonth(0) - 1;
+        t.tm_year  = m_gnss.getYear(0) - 1900;
         t.tm_isdst = false;
+
         return true;
     }
 
@@ -152,29 +150,29 @@ double GPSDevice::GetLongitude()
     return (m_gnss.getLongitude(0) * 1e-7);
 }
 
-double GPSDevice::GetAltitude()
+double GPSDevice::GetAltitude() // Meters
 {
-    return (m_gnss.getAltitude(0));
+    return (m_gnss.getAltitudeMSL(0) * 1e-3); // mm to meter
 }
 
-double GPSDevice::GetAltitudeInFeet()
+double GPSDevice::GetAltitudeFT()
 {
-    return (GetAltitude() / 304.8);
+    return (GetAltitude() * 3.2808399);
 }
 
-double GPSDevice::GetSpeedMS()
+double GPSDevice::GetSpeedMPS()
 {
-    return (m_gnss.getGroundSpeed(0)); // m/s
+    return (m_gnss.getGroundSpeed(0) * 1e-3); // mm/s to m/s
 }
 
-double GPSDevice::GetSpeedKMH()
+double GPSDevice::GetSpeedKPH()
 {
-    return (GetSpeedMS() * 0.2777777778);
+    return (GetSpeedMPS() * 0.2777777778); // m/s to kilometer per hour
 }
 
-double GPSDevice::GetSpeedKnot()
+double GPSDevice::GetSpeedKT()
 {
-    return (GetSpeedMS() * 1.9438444924);
+    return (GetSpeedMPS() * 1.9438444924); // m/s to knot
 }
 
 uint8_t GPSDevice::GetSatellites()
@@ -184,9 +182,39 @@ uint8_t GPSDevice::GetSatellites()
 
 double GPSDevice::GetHDOP()
 {
+    Serial.print("DOP: ");
+    Serial.println(m_gnss.getHorizontalDOP());
+
     return (m_gnss.getHorizontalDOP() * 1e-7);
 }
 
+// Took from TinyGPSPlus
+double GPSDevice::DistanceBetweenTwoCoords(double lat1, double long1, double lat2, double long2)
+{
+    // returns distance in meters between two positions, both specified
+    // as signed decimal-degrees latitude and longitude. Uses great-circle
+    // distance computation for hypothetical sphere of radius 6372795 meters.
+    // Because Earth is no exact sphere, rounding errors may be up to 0.5%.
+    // Courtesy of Maarten Lamers
+    double delta = radians(long1-long2);
+    double sdlong = sin(delta);
+    double cdlong = cos(delta);
+    lat1 = radians(lat1);
+    lat2 = radians(lat2);
+    double slat1 = sin(lat1);
+    double clat1 = cos(lat1);
+    double slat2 = sin(lat2);
+    double clat2 = cos(lat2);
+    delta = (clat1 * slat2) - (slat1 * clat2 * cdlong);
+    delta = sq(delta);
+    delta += sq(clat2 * sdlong);
+    delta = sqrt(delta);
+    double denom = (slat1 * slat2) + (clat1 * clat2 * cdlong);
+    delta = atan2(delta, denom);
+
+    return delta * 6372795;
+}
+#if 0
 float GPSDevice::LatLongToMeter(double lat_a, double lng_a, double lat_b, double lng_b)
 {
     double pk = (180 / 3.14169);
@@ -207,6 +235,7 @@ float GPSDevice::LatLongToMeter(double lat_a, double lng_a, double lat_b, double
 
     return (float)(6366000 * tt);
 }
+#endif
 
 bool GPSDevice::connect()
 {
@@ -215,6 +244,11 @@ bool GPSDevice::connect()
     if (m_serialGPS)
     {
         m_isConnected = m_gnss.begin(*m_serialGPS);
+
+        if (m_isConnected)
+        {
+            m_gnss.flushPVT();
+        }
     }
 
     return m_isConnected;
@@ -227,7 +261,10 @@ bool GPSDevice::setUBXMode()
         // Configure the U-Blox
         if (m_gnss.setUART1Output(COM_TYPE_UBX, 1000) && m_gnss.setNavigationFrequency(1, 1000))
         {
-            return true; // Success
+            m_wakeState = true;
+            m_lastWakeTime = millis();
+
+            return true;
         }
     }
 

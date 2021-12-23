@@ -24,18 +24,18 @@ class GPSDevice
         void SetWake(bool on);
 
 
-        double GetLatitude();
-        double GetLongitude();
-        double GetAltitude();
-        double GetAltitudeInFeet();
-        double GetSpeedMS();
-        double GetSpeedKMH();
-        double GetSpeedKnot();
+        double GetLatitude();    // in Degrees
+        double GetLongitude();   // in Degrees
+        double GetAltitude();    // In Meters
+        double GetAltitudeFT();  // In Feet
+        double GetSpeedMPS();    // in meter per second
+        double GetSpeedKPH();    // in kilometer per hour
+        double GetSpeedKT();     // in Knot
 
         uint8_t GetSatellites();
         double GetHDOP();
 
-        static float LatLongToMeter(double lat_a, double lng_a, double lat_b, double lng_b);
+        static double DistanceBetweenTwoCoords(double lat_a, double lng_a, double lat_b, double lng_b);
 
 
     private:
