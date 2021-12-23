@@ -28,9 +28,6 @@ class Deg2DDMMMM
             p.degrees = uint16_t(p.value);                         // integer part
             p.minutes = (p.value - p.degrees) * 60.0;              // Fractionnal part, converted to minutes
 
-            printf("MULT: %g => %g\n", p.minutes, (p.minutes * 1e2));
-            printf("MULT: %g => %g\n", p.minutes, nearbyint(p.minutes * 1e2));
-
             if (highPrecision)
             {
                 decimation = (p.minutes * 1e2); // avoid rounding

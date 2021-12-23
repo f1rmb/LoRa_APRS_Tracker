@@ -44,6 +44,7 @@ struct GlobalParameters
             gpsIsSleeping(false),
             gpsSleepActionTime(0),
             lastUpdateTime(millis()),
+            gpsFixTime(0),
 #ifdef TTGO_T_Beam_V1_0
             batteryLastCheckTime(0),
 #endif
@@ -114,6 +115,7 @@ struct GlobalParameters
         bool           gpsIsSleeping;
         unsigned long  gpsSleepActionTime;
         unsigned long  lastUpdateTime;
+        unsigned long  gpsFixTime;
 #ifdef TTGO_T_Beam_V1_0
         unsigned long  batteryLastCheckTime;
 #endif
@@ -147,7 +149,7 @@ void setup()
 {
     // Save some power, switch from 240MHz to 80MHz, power consummption from 66.8mA to 33.2mA
     //setCpuFrequencyMhz(80);
-    setCpuFrequencyMhz(160);
+    //setCpuFrequencyMhz(160);
 
     // Log only Errors
     Logger::instance().setDebugLevel(Logger::DEBUG_LEVEL_ERROR);
@@ -166,10 +168,12 @@ void setup()
     {
         logPrintlnE("AXP192 init failed!");
     }
+
+    pm.GPSActivate();
     pm.LoRaActivate();
     pm.OLEDActivate();
-    pm.GPSActivate();
     pm.MeasurementsActivate();
+    delay(500);
 #endif
 
     delay(500);
@@ -298,13 +302,21 @@ void loop()
                     sprintf(buf, "I: %f", batCurrent[i]);
                     Serial.println(buf);
                 }
+                Serial.println(gParams.loraIsBusy);
                 Serial.println("===================\n");
             }
         }
 
 
 
-        bool gpsHasFix          = (gps.HasFix() && gps.GetPVT());
+        bool gpsStillHasToSleep = gps.StillHasToSleep();
+        bool gpsHasFix          = (gpsStillHasToSleep ? false : (gps.GetPVT() && gps.HasFix()));
+
+        if ((gpsStillHasToSleep == false) && gpsHasFix && (gParams.gpsFixTime == 0))
+        {
+            gParams.gpsFixTime = millis();
+        }
+
         double currentLat       = NAN;
         double currentLong      = NAN;
         double currentHeading   = NAN;
@@ -312,7 +324,6 @@ void loop()
         double currentSpeedKnot = NAN;
 
 
-        //if (gps.time.isValid())
         if (gpsHasFix)
         {
             currentLat       = gps.GetLatitude();
@@ -320,6 +331,8 @@ void loop()
             currentHeading   = gps.GetHeading();
             currentAltInFeet = gps.GetAltitudeFT();
             currentSpeedKnot = gps.GetSpeedKT();
+
+#if 0
             double altitude  = gps.GetAltitude();
             double speedms   = gps.GetSpeedMPS();
 
@@ -328,7 +341,7 @@ void loop()
                     currentLat, currentLong, currentHeading,
                     currentAltInFeet, altitude, currentSpeedKnot, speedms);
             Serial.println(buf);
-
+#endif
 
             struct tm dt;
             if (gps.GetDateAndTime(dt))
@@ -360,7 +373,8 @@ void loop()
 #ifdef TTGO_T_Beam_V1_0
         unsigned long m = millis();
         // Update the battery every 60 seconds, that's way enough
-        if ((gParams.batteryLastCheckTime == 0) || ((m - gParams.batteryLastCheckTime) >= 60000))
+        //if ((gParams.batteryLastCheckTime == 0) || ((m - gParams.batteryLastCheckTime) >= 60000))
+        if ((gParams.batteryLastCheckTime == 0) || ((m - gParams.batteryLastCheckTime) >= 10000))
         {
             gParams.batteryIsConnected = pm.isBatteryConnected();
             gParams.batteryLastCheckTime = m;
@@ -549,14 +563,14 @@ void loop()
                 LoRa.write(0x01);
                 // APRS Data:
                 LoRa.write((const uint8_t *)data.c_str(), data.length());
-                LoRa.endPacket();
+                LoRa.endPacket(true);
 
-                Serial.println("LoRa sent");
+                //Serial.println("LoRa sent");
             }
             else
             {
                 gParams.sendPositionUpdate = true; // Try to resend on the next GPS update
-                Serial.println("LoRa IS BUSY");
+                //Serial.println("LoRa IS BUSY");
             }
 #endif
             if (gParams.loraIsBusy)
@@ -581,6 +595,7 @@ void loop()
             }
         }
 
+#warning handle sleep
         //if (gps_time_update)
         {
             oled.Display(cfg.callsign,
@@ -589,14 +604,14 @@ void loop()
                     String("Nxt Bcn: ") + (gpsHasFix ? (cfg.smart_beacon.active ? "~" : "") + formatToTimeString(gParams.nextBeaconTimeStamp) : "--:--:--"),
                     (gParams.batteryIsConnected ? (String("Bat: ") + gParams.batteryVoltage + "V, " + gParams.batteryChargeCurrent + "mA") : "Powered via USB"),
                     String("Smart Beacon: " + getOnOff(cfg.smart_beacon.active)));
-
+#if 0
             Serial.println(cfg.callsign);
             Serial.println(formatToDateString(now()) + " " + formatToTimeString(now()));
             Serial.println(String("Sats: ") + String(gpsHasFix ? String(gps.GetSatellites()) : "-") + " HDOP: " + (gpsHasFix ? String(gps.GetHDOP()) : "--.--"));
             Serial.println(String("Nxt Bcn: ") + (gpsHasFix ? (cfg.smart_beacon.active ? "~" : "") + formatToTimeString(gParams.nextBeaconTimeStamp) : "--:--:--"));
             Serial.println((gParams.batteryIsConnected ? (String("Bat: ") + gParams.batteryVoltage + "V, " + gParams.batteryChargeCurrent + "mA") : "Powered via USB"));
             Serial.println(String("Smart Beacon: " + getOnOff(cfg.smart_beacon.active)));
-
+#endif
             if (cfg.smart_beacon.active)
             {
                 // Change the Tx internal based on the current speed
@@ -625,6 +640,28 @@ void loop()
                     gParams.txInterval = std::min(cfg.smart_beacon.slow_rate, cfg.smart_beacon.fast_speed * cfg.smart_beacon.fast_rate / currentSpeed) * 1000;
                 }
             }
+        }
+
+
+        if ((gpsStillHasToSleep == false) && gpsHasFix && ((gParams.gpsFixTime >= 0) && ((millis() - gParams.gpsFixTime) > 10000)))
+        {
+            bool res = gps.SetLowPower(true, 10000);
+
+            if (res)
+            {
+                gParams.gpsFixTime = 0;
+            }
+            //Serial.println(res ? "GPS SLEEP" : "GPS SLEEP FAILED");
+        }
+        else if (gps.IsSleeping() && (gps.StillHasToSleep() == false))
+        {
+            bool res = gps.SetLowPower(false, 0);
+
+            if (res)
+            {
+                gParams.gpsFixTime = 0;
+            }
+            //Serial.println(res ? "GPS AWAKE" : "GPS AWAKE FAILED");
         }
 
 #if 0

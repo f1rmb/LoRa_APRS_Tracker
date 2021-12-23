@@ -7,11 +7,23 @@
 class GPSDevice
 {
     public:
+        typedef enum
+        {
+            GPS_FIXTYPE_NO_FIX = 0,
+            GPS_FIXTYPE_DEAD_RECKONING,
+            GPS_FIXTYPE_2D,
+            GPS_FIXTYPE_3D,
+            GPS_FIXTYPE_GNSS,
+            GPS_FIXTYPE_TIME_FIX
+        } GPS_FIXTYPE_t;
+
+    public:
         GPSDevice();
         ~GPSDevice();
 
         bool Initialize(HardwareSerial &serial, bool doBegin);
         bool FactoryReset();
+        GPS_FIXTYPE_t GetFixType();
         bool HasFix();
         bool HasData();
 
@@ -21,8 +33,9 @@ class GPSDevice
         double GetHeading();
 
 
-        void SetWake(bool on);
-
+        bool SetLowPower(bool on, uint32_t millisecs);
+        bool StillHasToSleep();
+        bool IsSleeping();
 
         double GetLatitude();    // in Degrees
         double GetLongitude();   // in Degrees
@@ -50,9 +63,10 @@ class GPSDevice
         SFE_UBLOX_GNSS    m_gnss;
 
         uint8_t           m_fixType;
-        bool              m_wakeState;
+        bool              m_lowPowerModeEnabled;
         unsigned long     m_lastWakeTime;
         unsigned long     m_lastSleepTime;
+        uint32_t          m_sleepMS;
 };
 
 

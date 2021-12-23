@@ -13,9 +13,10 @@ GPSDevice::GPSDevice() :
 m_serialGPS(NULL),
 m_isConnected(false),
 m_fixType(0),
-m_wakeState(true),
+m_lowPowerModeEnabled(false),
 m_lastWakeTime(0),
-m_lastSleepTime(0)
+m_lastSleepTime(0),
+m_sleepMS(5000)
 {
 }
 
@@ -53,6 +54,7 @@ bool GPSDevice::FactoryReset()
 {
     if (m_serialGPS && m_isConnected)
     {
+        m_gnss.flushPVT();
         m_gnss.factoryReset();
     }
 
@@ -75,6 +77,10 @@ bool GPSDevice::FactoryReset()
     return false;
 }
 
+GPSDevice::GPS_FIXTYPE_t GPSDevice::GetFixType()
+{
+    return static_cast<GPS_FIXTYPE_t>(m_gnss.getFixType());
+}
 
 bool GPSDevice::HasFix()
 {
@@ -87,25 +93,59 @@ bool GPSDevice::HasData()
     return (m_gnss.checkUblox());
 }
 
-void GPSDevice::SetWake(bool on)
+bool GPSDevice::SetLowPower(bool on, uint32_t millisecs)
 {
     //m_fixType = 0;
-    if (m_wakeState != on)
+    if (m_lowPowerModeEnabled != on)
     {
+        bool result = false;
+
         if (on)
         {
-            m_lastWakeTime = millis();
-            wake();
+            // Check if we have a valid fix first.
+            if (HasFix())
+            {
+                GPS_FIXTYPE_t fType = GetFixType();
+
+                // Then a valid FIX
+                if ((fType >= GPS_FIXTYPE_3D) && (fType <= GPS_FIXTYPE_GNSS))
+                {
+                    if ((result = m_gnss.powerSaveMode(true)))
+                    {
+                        m_sleepMS = millisecs;
+                    }
+                }
+            }
         }
         else
         {
-            m_lastSleepTime = millis();
-#warning sleep time
-            sleep(20000);
+            if ((result = m_gnss.powerSaveMode(false)))
+            {
+            }
         }
 
-        m_wakeState = on;
+
+        m_lowPowerModeEnabled = ((result == false) ? false : on);
+
+        if (result)
+        {
+            m_lastSleepTime = millis();
+        }
+
+        return result;
     }
+
+    return false;
+}
+
+bool GPSDevice::StillHasToSleep()
+{
+    return (m_lowPowerModeEnabled && ((millis() - m_lastSleepTime) < m_sleepMS));
+}
+
+bool GPSDevice::IsSleeping()
+{
+    return (m_lowPowerModeEnabled);
 }
 
 bool GPSDevice::GetPVT()
@@ -137,22 +177,22 @@ bool GPSDevice::GetDateAndTime(struct tm &t)
 
 double GPSDevice::GetHeading()
 {
-    return (m_gnss.getHeading(0) * 1e-5);
+    return (m_gnss.getHeading() * 1e-5);
 }
 
 double GPSDevice::GetLatitude()
 {
-    return (m_gnss.getLatitude(0) * 1e-7);
+    return (m_gnss.getLatitude() * 1e-7);
 }
 
 double GPSDevice::GetLongitude()
 {
-    return (m_gnss.getLongitude(0) * 1e-7);
+    return (m_gnss.getLongitude() * 1e-7);
 }
 
 double GPSDevice::GetAltitude() // Meters
 {
-    return (m_gnss.getAltitudeMSL(0) * 1e-3); // mm to meter
+    return (m_gnss.getAltitudeMSL() * 1e-3); // mm to meter
 }
 
 double GPSDevice::GetAltitudeFT()
@@ -162,7 +202,7 @@ double GPSDevice::GetAltitudeFT()
 
 double GPSDevice::GetSpeedMPS()
 {
-    return (m_gnss.getGroundSpeed(0) * 1e-3); // mm/s to m/s
+    return (m_gnss.getGroundSpeed() * 1e-3); // mm/s to m/s
 }
 
 double GPSDevice::GetSpeedKPH()
@@ -177,15 +217,12 @@ double GPSDevice::GetSpeedKT()
 
 uint8_t GPSDevice::GetSatellites()
 {
-    return (m_gnss.getSIV(0));
+    return (m_gnss.getSIV());
 }
 
 double GPSDevice::GetHDOP()
 {
-    Serial.print("DOP: ");
-    Serial.println(m_gnss.getHorizontalDOP());
-
-    return (m_gnss.getHorizontalDOP() * 1e-7);
+    return (m_gnss.getHorizontalDOP() * 1e-2);
 }
 
 // Took from TinyGPSPlus
@@ -244,11 +281,6 @@ bool GPSDevice::connect()
     if (m_serialGPS)
     {
         m_isConnected = m_gnss.begin(*m_serialGPS);
-
-        if (m_isConnected)
-        {
-            m_gnss.flushPVT();
-        }
     }
 
     return m_isConnected;
@@ -261,7 +293,7 @@ bool GPSDevice::setUBXMode()
         // Configure the U-Blox
         if (m_gnss.setUART1Output(COM_TYPE_UBX, 1000) && m_gnss.setNavigationFrequency(1, 1000))
         {
-            m_wakeState = true;
+            m_lowPowerModeEnabled = false;
             m_lastWakeTime = millis();
 
             return true;
@@ -273,10 +305,37 @@ bool GPSDevice::setUBXMode()
 
 void GPSDevice::wake()
 {
+    uint8_t lowPowerMode = m_gnss.getPowerSaveMode();
+
+    if (lowPowerMode == 255)
+    {
+        Serial.println(F("*** getPowerSaveMode FAILED ***"));
+    }
+    else
+    {
+        Serial.print(F("The low power mode is: "));
+        Serial.print(lowPowerMode);
+        if (lowPowerMode == 0)
+        {
+            Serial.println(F(" (Continuous)"));
+        }
+        else if (lowPowerMode == 1)
+        {
+            Serial.println(F(" (Power Save)"));
+        }
+        else if (lowPowerMode == 4)
+        {
+            Serial.println(F(" (Continuous)"));
+        }
+        else
+        {
+            Serial.println(F(" (Unknown!)"));
+        }
+    }
 
 }
 
 void GPSDevice::sleep(uint32_t seconds)
 {
-    m_gnss.powerOff(seconds);
+    //m_gnss.powerOff(seconds);
 }
