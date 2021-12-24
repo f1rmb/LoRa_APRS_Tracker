@@ -21,7 +21,7 @@ class GPSDevice
         GPSDevice();
         ~GPSDevice();
 
-        bool Initialize(HardwareSerial &serial, bool doBegin);
+        bool Initialize(HardwareSerial &serial);
         bool FactoryReset();
         GPS_FIXTYPE_t GetFixType();
         bool HasFix();
@@ -35,6 +35,7 @@ class GPSDevice
 
         bool SetLowPower(bool on, uint32_t millisecs);
         bool StillHasToSleep();
+        unsigned long GetRemainingSleepTime();
         bool IsSleeping();
 
         double GetLatitude();    // in Degrees
@@ -54,8 +55,6 @@ class GPSDevice
     private:
         bool connect();
         bool setUBXMode();
-        void wake();
-        void sleep(uint32_t seconds);
 
     private:
         HardwareSerial   *m_serialGPS;
@@ -64,7 +63,6 @@ class GPSDevice
 
         uint8_t           m_fixType;
         bool              m_lowPowerModeEnabled;
-        unsigned long     m_lastWakeTime;
         unsigned long     m_lastSleepTime;
         uint32_t          m_sleepMS;
 };

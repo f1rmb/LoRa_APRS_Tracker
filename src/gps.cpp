@@ -14,7 +14,6 @@ m_serialGPS(NULL),
 m_isConnected(false),
 m_fixType(0),
 m_lowPowerModeEnabled(false),
-m_lastWakeTime(0),
 m_lastSleepTime(0),
 m_sleepMS(5000)
 {
@@ -25,14 +24,10 @@ GPSDevice::~GPSDevice()
 
 }
 
-bool GPSDevice::Initialize(HardwareSerial &serial, bool doBegin)
+bool GPSDevice::Initialize(HardwareSerial &serial)
 {
     m_serialGPS = &serial;
-
-    if (doBegin)
-    {
-        m_serialGPS->begin(GPS_BAUDRATE, SERIAL_8N1, GPS_TX, GPS_RX);
-    }
+    m_serialGPS->begin(GPS_BAUDRATE, SERIAL_8N1, GPS_TX, GPS_RX);
 
     for (int i = 0; (i < 3) && !connect(); i++)
     {
@@ -41,10 +36,26 @@ bool GPSDevice::Initialize(HardwareSerial &serial, bool doBegin)
 
     if (m_isConnected)
     {
-        if (setUBXMode())
+        bool ubxInit;
+
+        // Enable UBX mode
+        for (int i = 0; (i < 3); i++)
         {
-            return true;
+            if ((ubxInit = setUBXMode()))
+            {
+                break;
+            }
+
+            delay(300);
         }
+
+        // UBX mode failed 3 times in a row -> factoryReset
+        if (ubxInit == false)
+        {
+            ubxInit = FactoryReset();
+        }
+
+        return ubxInit;
     }
 
     return false;
@@ -85,7 +96,6 @@ GPSDevice::GPS_FIXTYPE_t GPSDevice::GetFixType()
 bool GPSDevice::HasFix()
 {
     return m_gnss.getGnssFixOk();
-    //return (m_fixType >= 3 && m_fixType <= 4);
 }
 
 bool GPSDevice::HasData()
@@ -95,7 +105,6 @@ bool GPSDevice::HasData()
 
 bool GPSDevice::SetLowPower(bool on, uint32_t millisecs)
 {
-    //m_fixType = 0;
     if (m_lowPowerModeEnabled != on)
     {
         bool result = false;
@@ -121,6 +130,7 @@ bool GPSDevice::SetLowPower(bool on, uint32_t millisecs)
         {
             if ((result = m_gnss.powerSaveMode(false)))
             {
+                // ...
             }
         }
 
@@ -143,8 +153,51 @@ bool GPSDevice::StillHasToSleep()
     return (m_lowPowerModeEnabled && ((millis() - m_lastSleepTime) < m_sleepMS));
 }
 
+unsigned long GPSDevice::GetRemainingSleepTime()
+{
+    if (m_lowPowerModeEnabled)
+    {
+        return (m_sleepMS - (millis() - m_lastSleepTime));
+    }
+
+    return 0UL;
+}
+
 bool GPSDevice::IsSleeping()
 {
+#if 0
+    if (m_lowPowerModeEnabled)
+    {
+        uint8_t lowPowerMode = m_gnss.getPowerSaveMode();
+
+        if (lowPowerMode == 255)
+        {
+            Serial.println(F("*** getPowerSaveMode FAILED ***"));
+        }
+        else
+        {
+            Serial.print(F("The low power mode is: "));
+            Serial.print(lowPowerMode);
+            if (lowPowerMode == 0)
+            {
+                Serial.println(F(" (Continuous)"));
+            }
+            else if (lowPowerMode == 1)
+            {
+                Serial.println(F(" (Power Save)"));
+            }
+            else if (lowPowerMode == 4)
+            {
+                Serial.println(F(" (Continuous)"));
+            }
+            else
+            {
+                Serial.println(F(" (Unknown!)"));
+            }
+        }
+    }
+#endif
+
     return (m_lowPowerModeEnabled);
 }
 
@@ -251,32 +304,11 @@ double GPSDevice::DistanceBetweenTwoCoords(double lat1, double long1, double lat
 
     return delta * 6372795;
 }
-#if 0
-float GPSDevice::LatLongToMeter(double lat_a, double lng_a, double lat_b, double lng_b)
-{
-    double pk = (180 / 3.14169);
-    double a1 = lat_a / pk;
-    double a2 = lng_a / pk;
-    double b1 = lat_b / pk;
-    double b2 = lng_b / pk;
-    double cos_b1 = cos(b1);
-    double cos_a1 = cos(a1);
-    double t1 = cos_a1 * cos(a2) * cos_b1 * cos(b2);
-    double t2 = cos_a1 * sin(a2) * cos_b1 * sin(b2);
-    double t3 = sin(a1) * sin(b1);
-    double tt = acos(t1 + t2 + t3);
-    if (std::isnan(tt))
-    {
-        tt = 0.0; // Must have been the same point?
-    }
-
-    return (float)(6366000 * tt);
-}
-#endif
 
 bool GPSDevice::connect()
 {
     m_isConnected = false;
+    m_lowPowerModeEnabled = false;
 
     if (m_serialGPS)
     {
@@ -290,52 +322,19 @@ bool GPSDevice::setUBXMode()
 {
     if (m_serialGPS && m_isConnected)
     {
-        // Configure the U-Blox
-        if (m_gnss.setUART1Output(COM_TYPE_UBX, 1000) && m_gnss.setNavigationFrequency(1, 1000))
-        {
-            m_lowPowerModeEnabled = false;
-            m_lastWakeTime = millis();
+        m_lowPowerModeEnabled = false;
+        m_gnss.powerSaveMode(false);
 
-            return true;
+        // Configure the U-Blox
+        if (m_gnss.setUART1Output(COM_TYPE_UBX))
+        {
+            delay(2000);
+            if (m_gnss.setNavigationFrequency(1))
+            {
+                return true;
+            }
         }
     }
 
     return false;
-}
-
-void GPSDevice::wake()
-{
-    uint8_t lowPowerMode = m_gnss.getPowerSaveMode();
-
-    if (lowPowerMode == 255)
-    {
-        Serial.println(F("*** getPowerSaveMode FAILED ***"));
-    }
-    else
-    {
-        Serial.print(F("The low power mode is: "));
-        Serial.print(lowPowerMode);
-        if (lowPowerMode == 0)
-        {
-            Serial.println(F(" (Continuous)"));
-        }
-        else if (lowPowerMode == 1)
-        {
-            Serial.println(F(" (Power Save)"));
-        }
-        else if (lowPowerMode == 4)
-        {
-            Serial.println(F(" (Continuous)"));
-        }
-        else
-        {
-            Serial.println(F(" (Unknown!)"));
-        }
-    }
-
-}
-
-void GPSDevice::sleep(uint32_t seconds)
-{
-    //m_gnss.powerOff(seconds);
 }

@@ -10,6 +10,7 @@
 #define OLED_RST 16
 
 #define BUTTON_PIN 38 // The middle button GPIO on the T-Beam
+#define SERIAL0_RX_GPIO 3
 
 #ifdef TTGO_T_Beam_V0_7
 #define GPS_RX 15

@@ -4,8 +4,8 @@
 #include <OneButton.h>
 #include <TimeLib.h>
 #include <WiFi.h>
-#include <logger.h>
 
+#include "dummylogger.h"
 #include "configuration.h"
 #include "gps.h"
 #include "display.h"
@@ -13,12 +13,15 @@
 #include "power_management.h"
 #include "Deg2DDMMMM.h"
 
+
+#define AWAKE_TIME_MS 5000
+#define SLEEP_TIME_MS 10000
+
 static Configuration     cfg;
 static OLEDDisplay       oled;
 static PowerManagement   pm;
 static OneButton         userBtn(BUTTON_PIN, true, true);
 static HardwareSerial    ss(1);
-//static TinyGPSPlus     gps;
 static GPSDevice         gps;
 
 
@@ -40,11 +43,13 @@ struct GlobalParameters
             batteryIsConnected(false),
             batteryVoltage(""),
             batteryChargeCurrent(""),
-            loraIsBusy(false),
             gpsIsSleeping(false),
             gpsSleepActionTime(0),
+            gpsHadFix(false),
             lastUpdateTime(millis()),
             gpsFixTime(0),
+            gpsHasToSetTime(true),
+            awakeButtonTime(0),
 #ifdef TTGO_T_Beam_V1_0
             batteryLastCheckTime(0),
 #endif
@@ -111,11 +116,13 @@ struct GlobalParameters
         bool           batteryIsConnected;
         String         batteryVoltage;
         String         batteryChargeCurrent;
-        bool           loraIsBusy;
         bool           gpsIsSleeping;
         unsigned long  gpsSleepActionTime;
+        bool           gpsHadFix;
         unsigned long  lastUpdateTime;
         unsigned long  gpsFixTime;
+        bool           gpsHasToSetTime;
+        unsigned long  awakeButtonTime;
 #ifdef TTGO_T_Beam_V1_0
         unsigned long  batteryLastCheckTime;
 #endif
@@ -129,20 +136,140 @@ struct GlobalParameters
 
 static GlobalParameters  gParams;
 
-static double batCurrent[10];
-static int batCurrentIndex = 0;
+
+#if 0
+static void execSleep(uint32_t milliseconds)
+{
+    esp_sleep_enable_timer_wakeup(milliseconds * 1000U);
+    // suspend peripherials
 
 
-// Functions prototypes
-static void buttonClickCallback();
-static void loraTXDoneCallback();
-static void loadConfiguration();
-static void loraInit();
-static String formatToDateString(time_t t);
-static String formatToTimeString(time_t t);
-static String getOnOff(bool state);
-static String PadWithZeros(unsigned int number, unsigned int width);
+    esp_light_sleep_start();
+    //esp_deep_sleep_start();
 
+    // resume peripherials
+}
+#endif
+
+static void buttonClickCallback()
+{
+#ifdef TTGO_T_Beam_V1_0
+    bool oledWasOn = oled.IsActivated();
+
+    gParams.ResetDisplayTimeout(); // Reset the OLED timeout on any button event
+
+    if (oledWasOn == false) // The OLED was off, hence we won't go further this time
+    {
+        return;
+    }
+#endif
+
+    if (cfg.beacon.button_tx)
+    {
+        // attach TX action to user button (defined by BUTTON_PIN)
+        gParams.sendPositionUpdate = true;
+    }
+}
+
+static void loadConfiguration()
+{
+    ConfigurationManagement confmg("/tracker.json");
+    cfg = confmg.readConfiguration();
+
+    if (cfg.callsign.startsWith("NOCALL"))
+    {
+        DlogPrintlnE("You have to change your settings in 'data/tracker.json' and "
+                "upload it via \"Upload File System image\"!");
+        oled.Display("ERROR", "You have to change your settings in 'data/tracker.json' and "
+                "upload it via \"Upload File System image\"!");
+
+        while (true) {}
+    }
+}
+
+static void loraInit()
+{
+    DlogPrintlnI("Set SPI pins!");
+    SPI.begin(LORA_SCK, LORA_MISO, LORA_MOSI, LORA_CS);
+    DlogPrintlnI("Set LoRa pins!");
+    LoRa.setPins(LORA_CS, LORA_RST, LORA_IRQ);
+
+    long freq = cfg.lora.frequencyTx;
+    DlogPrintlnI("frequency: " + String(freq));
+
+    if (LoRa.begin(freq) == false)
+    {
+        DlogPrintlnE("Starting LoRa failed!");
+        oled.Display("ERROR", "Starting LoRa failed!");
+
+        while (true) {}
+    }
+
+    LoRa.setSpreadingFactor(cfg.lora.spreadingFactor);
+    LoRa.setSignalBandwidth(cfg.lora.signalBandwidth);
+    LoRa.setCodingRate4(cfg.lora.codingRate4);
+    LoRa.enableCrc();
+
+    LoRa.setTxPower(cfg.lora.power);
+    //LoRa.onTxDone(loraTXDoneCallback);
+
+    LoRa.sleep();
+
+    DlogPrintlnI("LoRa init done!");
+    oled.Display("INFO", "LoRa init done!", 2000);
+}
+
+static String padWithZeros(unsigned int number, unsigned int width)
+{
+    char buffer[64];
+
+    snprintf(buffer, sizeof(buffer), "%.*d", width, number);
+
+    return String(buffer);
+}
+
+static String formatToDateString(time_t t)
+{
+    return String(padWithZeros(day(t), 2) + "." + padWithZeros(month(t), 2) + "." + padWithZeros(year(t), 4));
+}
+
+static String formatToTimeString(time_t t)
+{
+    return String(padWithZeros(hour(t), 2) + "." + padWithZeros(minute(t), 2) + "." + padWithZeros(second(t), 2));
+}
+
+static String getOnOff(bool state)
+{
+    return String(state ? "On" : "Off");
+}
+
+static esp_sleep_wakeup_cause_t execLightSleepIfPossible(uint64_t sleepMS)
+{
+    // ESP sleeping
+    if ((cfg.display_timeout == 0) || ((cfg.display_timeout > 0) && (oled.IsActivated() == false)))
+    {
+        uint64_t sleepUS = sleepMS * 1000LL;
+
+        esp_sleep_pd_config(ESP_PD_DOMAIN_RTC_PERIPH, ESP_PD_OPTION_ON); // RTC stays ON
+
+#if 0 // Disabled: it trigger false interrupts with unplugged cable.
+#warning DISABLE ME
+        gpio_wakeup_enable((gpio_num_t)SERIAL0_RX_GPIO, GPIO_INTR_LOW_LEVEL);
+#endif
+
+        gpio_wakeup_enable((gpio_num_t)BUTTON_PIN, GPIO_INTR_LOW_LEVEL);
+
+        assert(esp_sleep_enable_gpio_wakeup() == ESP_OK);
+        assert(esp_sleep_enable_timer_wakeup(sleepUS) == ESP_OK);
+        assert(esp_light_sleep_start() == ESP_OK);
+
+        esp_sleep_wakeup_cause_t cause = esp_sleep_get_wakeup_cause();
+
+        return cause;
+    }
+
+    return ESP_SLEEP_WAKEUP_UNDEFINED;
+}
 
 // cppcheck-suppress unusedFunction
 void setup()
@@ -151,8 +278,10 @@ void setup()
     //setCpuFrequencyMhz(80);
     //setCpuFrequencyMhz(160);
 
+#if defined(LOGGER_ENABLED)
     // Log only Errors
     Logger::instance().setDebugLevel(Logger::DEBUG_LEVEL_ERROR);
+#endif
 
     Serial.begin(115200);
 
@@ -162,11 +291,11 @@ void setup()
     Wire.begin(SDA, SCL);
     if (!pm.begin(Wire))
     {
-        logPrintlnI("AXP192 init done!");
+        DlogPrintlnI("AXP192 init done!");
     }
     else
     {
-        logPrintlnE("AXP192 init failed!");
+        DlogPrintlnE("AXP192 init failed!");
     }
 
     pm.GPSActivate();
@@ -177,20 +306,24 @@ void setup()
 #endif
 
     delay(500);
-    logPrintlnI("LoRa APRS Tracker by OE5BPA (Peter Buchegger)");
+    DlogPrintlnI("LoRa APRS Tracker by OE5BPA (Peter Buchegger)");
     oled.Init();
 
-    oled.Display("OE5BPA", "LoRa APRS Tracker", "by Peter Buchegger", emptyString, emptyString, "Mods: F1RMB - v0.101");
+    oled.Display("OE5BPA", "LoRa APRS Tracker", "by Peter Buchegger", emptyString, "Mods: Daniel, F1RMB", "               v0.201");
 
     loadConfiguration();
 
-    if (gps.Initialize((cfg.debug ? Serial : ss), (cfg.debug ? false : true)) == false)
+    if (gps.Initialize(ss) == false)
     {
         oled.Display("GPS INIT", "Initialization failed");
+
+#ifdef TTGO_T_Beam_V1_0 // Execute a factory reset to try to solve the communication problem
+        pm.GPSDeactivate();
+        delay(2000);
+        ESP.restart();
+#endif
         while (true) { }
     }
-
-    //delay(2000);
 
     loraInit();
 
@@ -209,10 +342,11 @@ void setup()
     userBtn.attachClick(buttonClickCallback);
     userBtn.tick();
 
-    logPrintlnI("Smart Beacon is " + getOnOff(cfg.smart_beacon.active));
+    DlogPrintlnI("Smart Beacon is " + getOnOff(cfg.smart_beacon.active));
     oled.Display("INFO", "Smart Beacon is " + getOnOff(cfg.smart_beacon.active), 1000);
-    logPrintlnI("setup done...");
+    DlogPrintlnI("setup done...");
 
+#if 0
     delay(500);
     userBtn.tick();
 
@@ -232,6 +366,7 @@ void setup()
                 " It will take time",
                 "to acquire satellites", 5000);
     }
+#endif
 
     oled.Display("INFO", "Waiting for Position");
 
@@ -266,13 +401,9 @@ void loop()
                 gps.encode(c);
             }
         }
-#else
-        if (gps.HasData())
-        {
-
-        }
 #endif
 
+#if 0
         while (Serial.available() > 0)
         {
             char c = Serial.read();
@@ -290,39 +421,35 @@ void loop()
             {
                 ESP.restart();
             }
-            else if (c == 'i' || c == 'I')
-            {
-                Serial.println("===================");
-                Serial.print("Index: ");
-                Serial.println(batCurrentIndex);
-                for (size_t i = 0; i < (sizeof(batCurrent) / sizeof(batCurrent[0])); i++)
-                {
-                    char buf[32];
-
-                    sprintf(buf, "I: %f", batCurrent[i]);
-                    Serial.println(buf);
-                }
-                Serial.println(gParams.loraIsBusy);
-                Serial.println("===================\n");
-            }
         }
+#endif
 
+        double currentLat         = NAN;
+        double currentLong        = NAN;
+        double currentHeading     = NAN;
+        double currentAltInFeet   = NAN;
+        double currentSpeedKnot   = NAN;
+        bool   timeIsValid        = false;
+        bool   gpsStillHasToSleep = gps.StillHasToSleep();
+        bool   gpsHasFix          = (gpsStillHasToSleep ? false : (gps.GetPVT() && gps.HasFix()));
 
-
-        bool gpsStillHasToSleep = gps.StillHasToSleep();
-        bool gpsHasFix          = (gpsStillHasToSleep ? false : (gps.GetPVT() && gps.HasFix()));
-
+        // GPS fix
+        //
+        // GPS acquired a fix, start to countdown for power saving state
         if ((gpsStillHasToSleep == false) && gpsHasFix && (gParams.gpsFixTime == 0))
         {
             gParams.gpsFixTime = millis();
         }
 
-        double currentLat       = NAN;
-        double currentLong      = NAN;
-        double currentHeading   = NAN;
-        double currentAltInFeet = NAN;
-        double currentSpeedKnot = NAN;
-
+        // Keep track of the GPS fix, regardless of the GPS PowerSave status (sleeping or not).
+        if ((gParams.gpsHadFix == false) && gpsHasFix)
+        {
+            gParams.gpsHadFix = true;
+        }
+        else if (gParams.gpsHadFix && ((gpsStillHasToSleep == false) && (gpsHasFix == false)))
+        {
+            gParams.gpsHadFix = false;
+        }
 
         if (gpsHasFix)
         {
@@ -331,6 +458,12 @@ void loop()
             currentHeading   = gps.GetHeading();
             currentAltInFeet = gps.GetAltitudeFT();
             currentSpeedKnot = gps.GetSpeedKT();
+
+            // Fix has been lost, set the RTC on the next fix
+            if ((gParams.gpsHasToSetTime == false) && (gpsStillHasToSleep == false) && (gpsHasFix == false))
+            {
+                gParams.gpsHasToSetTime = true;
+            }
 
 #if 0
             double altitude  = gps.GetAltitude();
@@ -344,9 +477,13 @@ void loop()
 #endif
 
             struct tm dt;
-            if (gps.GetDateAndTime(dt))
+            if ((timeIsValid = gps.GetDateAndTime(dt)))
             {
-                setTime(mktime(&dt)); // Update the RTC
+                if (gParams.gpsHasToSetTime) // We need to adjust the RTC
+                {
+                    gParams.gpsHasToSetTime = false;
+                    setTime(mktime(&dt)); // Update the RTC
+                }
 
                 if (gParams.nextBeaconTimeStamp <= now())
                 {
@@ -373,22 +510,15 @@ void loop()
 #ifdef TTGO_T_Beam_V1_0
         unsigned long m = millis();
         // Update the battery every 60 seconds, that's way enough
-        //if ((gParams.batteryLastCheckTime == 0) || ((m - gParams.batteryLastCheckTime) >= 60000))
-        if ((gParams.batteryLastCheckTime == 0) || ((m - gParams.batteryLastCheckTime) >= 10000))
+        if ((gParams.batteryLastCheckTime == 0) || ((m - gParams.batteryLastCheckTime) >= 60000))
         {
             gParams.batteryIsConnected = pm.isBatteryConnected();
             gParams.batteryLastCheckTime = m;
 
             if (gParams.batteryIsConnected)
             {
-                double I = pm.getBatteryChargeDischargeCurrent();
-
-                batCurrent[batCurrentIndex] = I;
-
                 gParams.batteryVoltage       = String(pm.getBatteryVoltage(), 2);
-                gParams.batteryChargeCurrent = String(I, 0);
-
-                batCurrentIndex = (batCurrentIndex + 1) % 10;
+                gParams.batteryChargeCurrent = String(pm.getBatteryChargeDischargeCurrent(), 0);
             }
         }
 #endif
@@ -432,6 +562,9 @@ void loop()
         if (gParams.sendPositionUpdate && gpsHasFix)
         {
             APRSMessage        msgStr;
+            Deg2DDMMMMPosition pLat, pLong;
+            char               latBuf[32];
+            char               longBuf[32];
 
             gParams.sendPositionUpdate = false;
             gParams.nextBeaconTimeStamp = now() + (cfg.smart_beacon.active ? cfg.smart_beacon.slow_rate : (cfg.beacon.timeout * SECS_PER_MIN));
@@ -439,11 +572,7 @@ void loop()
             msgStr.setSource(cfg.callsign);
             msgStr.setDestination("APLT00-1");
 
-#if 1
-            Deg2DDMMMMPosition pLat, pLong;
-            char               latBuf[32];
-            char               longBuf[32];
-
+            // Lat/Long
             Deg2DDMMMM::Convert(pLat, currentLat, cfg.enhance_precision);
             Deg2DDMMMM::Convert(pLong, currentLong, cfg.enhance_precision);
 
@@ -457,12 +586,12 @@ void loop()
 
                 daoStr = String(Deg2DDMMMM::DAO(daoBuf, pLat, pLong));
             }
-#endif
+
 
             String altStr;
             int    altValue = std::max(-99999, std::min(999999, (int)currentAltInFeet));
 
-            altStr = String("/A=") + (altValue < 0 ? "-" : "") + PadWithZeros((unsigned int)abs(altValue), ((altValue < 0) ? 5 : 6));
+            altStr = String("/A=") + (altValue < 0 ? "-" : "") + padWithZeros((unsigned int)abs(altValue), ((altValue < 0) ? 5 : 6));
 
 
             String courseAndSpeedStr;
@@ -470,7 +599,7 @@ void loop()
 
             if (gParams.speedZeroSent < 3)
             {
-                String speedStr    = PadWithZeros(speedValue, 3);
+                String speedStr    = padWithZeros(speedValue, 3);
                 int    courseValue = std::max(0, std::min(360, (int)currentHeading));
 
                 /* course in between 1..360 due to aprs spec */
@@ -479,7 +608,7 @@ void loop()
                     courseValue = 360;
                 }
 
-                String courseStr(PadWithZeros(courseValue, 3));
+                String courseStr(padWithZeros(courseValue, 3));
 
                 courseAndSpeedStr = courseStr + "/" + speedStr;
             }
@@ -527,12 +656,12 @@ void loop()
 
             msgStr.getBody()->setData(aprsmsg);
             String data(msgStr.encode());
-            logPrintlnD(data);
+            DlogPrintlnD(data);
 
-#warning SPLIT
 #if 0
             oled.Display("<< TX >>", data);
 #else
+#warning split for screen
             String splitData[5];
 
             splitData[0] = data.substring(0, 20);
@@ -541,9 +670,6 @@ void loop()
             splitData[3] = data.substring(61, 61+20);
             splitData[4] = data.substring(81, 81+20);
             oled.Display("<< TX >>", splitData[0], splitData[1], splitData[2], splitData[3], splitData[4]);
-            //Serial.print(data.c_str());
-            //Serial.print("\n ***** :");
-            //Serial.write((const uint8_t *)data.c_str(), data.length());
 #endif
 
             if (cfg.ptt.active)
@@ -552,10 +678,9 @@ void loop()
                 delay(cfg.ptt.start_delay);
             }
 
-#if 1
-            if (LoRa.beginPacket() != 0) // Ensure the LoRa module is in RX mode.
+            if (LoRa.beginPacket() != 0) // Ensure the LoRa module is not transmiting
             {
-                gParams.loraIsBusy = true;
+                LoRa.idle();
 
                 // Header:
                 LoRa.write('<');
@@ -563,20 +688,16 @@ void loop()
                 LoRa.write(0x01);
                 // APRS Data:
                 LoRa.write((const uint8_t *)data.c_str(), data.length());
-                LoRa.endPacket(true);
+                LoRa.endPacket(); // Send SYNC
 
-                //Serial.println("LoRa sent");
+                LoRa.sleep();
+
+                //Serial.print("=====> '");
+                //Serial.println(data.c_str());
             }
             else
             {
-                gParams.sendPositionUpdate = true; // Try to resend on the next GPS update
-                //Serial.println("LoRa IS BUSY");
-            }
-#endif
-            if (gParams.loraIsBusy)
-            {
-                Serial.print("=====> '");
-                Serial.println(data.c_str());
+                gParams.sendPositionUpdate = true; // Try to resend on the next run
             }
 
             if (cfg.smart_beacon.active)
@@ -589,29 +710,32 @@ void loop()
             }
 
             if (cfg.ptt.active)
-            {
-                delay(cfg.ptt.end_delay);
-                digitalWrite(cfg.ptt.io_pin, (cfg.ptt.reverse ? HIGH : LOW));
-            }
+             {
+                 delay(cfg.ptt.end_delay);
+                 digitalWrite(cfg.ptt.io_pin, (cfg.ptt.reverse ? HIGH : LOW));
+             }
         }
 
-#warning handle sleep
-        //if (gps_time_update)
-        {
-            oled.Display(cfg.callsign,
-                    formatToDateString(now()) + " " + formatToTimeString(now()),
-                    String("Sats: ") + (gpsHasFix ? String(gps.GetSatellites()) : "-") + " HDOP: " + (gpsHasFix ? String(gps.GetHDOP()) : "--.--"),
-                    String("Nxt Bcn: ") + (gpsHasFix ? (cfg.smart_beacon.active ? "~" : "") + formatToTimeString(gParams.nextBeaconTimeStamp) : "--:--:--"),
-                    (gParams.batteryIsConnected ? (String("Bat: ") + gParams.batteryVoltage + "V, " + gParams.batteryChargeCurrent + "mA") : "Powered via USB"),
-                    String("Smart Beacon: " + getOnOff(cfg.smart_beacon.active)));
+        oled.Display(cfg.callsign,
+                formatToDateString(now()) + " " + formatToTimeString(now()),
+                String("Sats: ") + (gParams.gpsHadFix ? String(gps.GetSatellites()) : "-") + " HDOP: " + (gParams.gpsHadFix ? String(gps.GetHDOP()) : "--.--"),
+                String("Nxt Bcn: ") + (gParams.gpsHadFix ? (cfg.smart_beacon.active ? "~" : "") + formatToTimeString(gParams.nextBeaconTimeStamp) : "--:--:--"),
+                (gParams.batteryIsConnected ? (String("Bat: ") + gParams.batteryVoltage + "V, " + gParams.batteryChargeCurrent + "mA") : "Powered via USB"),
+                String("Smart Beacon: " + getOnOff(cfg.smart_beacon.active)));
 #if 0
+        //if (gParams.gpsHadFix)
+        {
             Serial.println(cfg.callsign);
             Serial.println(formatToDateString(now()) + " " + formatToTimeString(now()));
-            Serial.println(String("Sats: ") + String(gpsHasFix ? String(gps.GetSatellites()) : "-") + " HDOP: " + (gpsHasFix ? String(gps.GetHDOP()) : "--.--"));
-            Serial.println(String("Nxt Bcn: ") + (gpsHasFix ? (cfg.smart_beacon.active ? "~" : "") + formatToTimeString(gParams.nextBeaconTimeStamp) : "--:--:--"));
+            Serial.println(String("Sats: ") + String(gpsHasFix ? String(gps.GetSatellites()) : "-") + " HDOP: " + (gParams.gpsHadFix ? String(gps.GetHDOP()) : "--.--"));
+            Serial.println(String("Nxt Bcn: ") + (gParams.gpsHadFix ? (cfg.smart_beacon.active ? "~" : "") + formatToTimeString(gParams.nextBeaconTimeStamp) : "--:--:--"));
             Serial.println((gParams.batteryIsConnected ? (String("Bat: ") + gParams.batteryVoltage + "V, " + gParams.batteryChargeCurrent + "mA") : "Powered via USB"));
             Serial.println(String("Smart Beacon: " + getOnOff(cfg.smart_beacon.active)));
+        }
 #endif
+
+        if (timeIsValid)
+        {
             if (cfg.smart_beacon.active)
             {
                 // Change the Tx internal based on the current speed
@@ -643,15 +767,15 @@ void loop()
         }
 
 
-        if ((gpsStillHasToSleep == false) && gpsHasFix && ((gParams.gpsFixTime >= 0) && ((millis() - gParams.gpsFixTime) > 10000)))
+        // GPS Sleep/Awake
+        if ((gpsStillHasToSleep == false) && gpsHasFix && ((gParams.gpsFixTime >= 0) && ((millis() - gParams.gpsFixTime) > AWAKE_TIME_MS)))
         {
-            bool res = gps.SetLowPower(true, 10000);
+            bool res = gps.SetLowPower(true, SLEEP_TIME_MS);
 
             if (res)
             {
                 gParams.gpsFixTime = 0;
             }
-            //Serial.println(res ? "GPS SLEEP" : "GPS SLEEP FAILED");
         }
         else if (gps.IsSleeping() && (gps.StillHasToSleep() == false))
         {
@@ -661,167 +785,48 @@ void loop()
             {
                 gParams.gpsFixTime = 0;
             }
-            //Serial.println(res ? "GPS AWAKE" : "GPS AWAKE FAILED");
         }
+    }
 
-#if 0
-        if ((cfg.debug == false) && ((millis() > 5000) && (gps.charsProcessed() < 10)))
+#if 1
+
+    // EPS Light Sleep
+    if (gParams.awakeButtonTime == 0 || ((millis() - gParams.awakeButtonTime) > 5000)) // Wait 5s after awaken from the button before going to sleep.
+    {
+        esp_sleep_wakeup_cause_t cause;
+        uint32_t gpsRemainingSleepTime = gps.GetRemainingSleepTime();
+
+        // If the display has a timeout value set, sleep as long as the GPS, otherwise for 500ms (clock accuracy)
+        cause = execLightSleepIfPossible(((cfg.display_timeout > 0) && (gpsRemainingSleepTime > 500)) ? gpsRemainingSleepTime : 500);
+
+        switch (cause)
         {
-            logPrintlnE("No GPS frames detected! Try to reset the GPS Chip holding user button on startup.");
-        }
-#endif
+            case ESP_SLEEP_WAKEUP_TIMER:
+                gParams.awakeButtonTime = 0;
+                break;
 
-#if 0
-        if (gParams.loraIsBusy)
-        {
-            delay(100); // Slow it down
-        }
-        else
-        {
-            execSleep(100);
-        }
-#else
-#if 0
-        bool hasFix = false;
-        if (gParams.gpsIsSleeping == false)
-        {
-            hasFix = gps.location.isValid();
-            char buffer[64];
+            case ESP_SLEEP_WAKEUP_UART:
+                gParams.awakeButtonTime = millis();
+                break;
 
-            snprintf(buffer, sizeof(buffer), "%s force: %d", (hasFix ? "FIX" : "NOFIX"), gParams.sendPositionUpdate);
-
-            //Serial.println(hasFix ? "FIX" : "NOFIX");
-            Serial.println(buffer);
-
-            if (hasFix)
+            case ESP_SLEEP_WAKEUP_UNDEFINED:
+            default:
             {
-                if ((millis() - gParams.gpsSleepActionTime) > 5000) // 5s up
+                bool pressed = !digitalRead(BUTTON_PIN);
+
+                gParams.awakeButtonTime = millis();
+
+                if (pressed)
                 {
-                    Serial.println("GPS SUSPEND");
-                    gpsSuspend(true);
-                    gParams.gpsSleepActionTime = millis();// + 10000; // 10s
+                    userBtn.tick(true);
                 }
             }
+            break;
 
         }
 
-        if (gParams.gpsIsSleeping && ((millis() - gParams.gpsSleepActionTime) > 10000)) // 10s down
-        {
-            Serial.println("GPS WAKEUP");
-            gpsSuspend(false);
-            gParams.gpsSleepActionTime = millis();
-        }
-#endif
-        //    delay(200); // Slow it down
-#endif
-    }
-}
-
-#if 0
-static void execSleep(uint32_t milliseconds)
-{
-    esp_sleep_enable_timer_wakeup(milliseconds * 1000U);
-    // suspend peripherials
-
-
-    esp_light_sleep_start();
-    //esp_deep_sleep_start();
-
-    // resume peripherials
-}
-#endif
-
-static void loraTXDoneCallback()
-{
-    gParams.loraIsBusy = false;
-}
-
-static void buttonClickCallback()
-{
-#ifdef TTGO_T_Beam_V1_0
-    bool oledWasOn = oled.IsActivated();
-
-    gParams.ResetDisplayTimeout(); // Reset the OLED timeout on any button event
-
-    if (oledWasOn == false) // The OLED was off, hence we won't go further this time
-    {
-        return;
     }
 #endif
 
-    if (cfg.beacon.button_tx)
-    {
-        // attach TX action to user button (defined by BUTTON_PIN)
-        gParams.sendPositionUpdate = true;
-    }
 }
 
-static void loadConfiguration()
-{
-    ConfigurationManagement confmg("/tracker.json");
-    cfg = confmg.readConfiguration();
-
-    if (cfg.callsign.startsWith("NOCALL"))
-    {
-        logPrintlnE("You have to change your settings in 'data/tracker.json' and "
-                "upload it via \"Upload File System image\"!");
-        oled.Display("ERROR", "You have to change your settings in 'data/tracker.json' and "
-                "upload it via \"Upload File System image\"!");
-
-        while (true) {}
-    }
-}
-
-static void loraInit()
-{
-    logPrintlnI("Set SPI pins!");
-    SPI.begin(LORA_SCK, LORA_MISO, LORA_MOSI, LORA_CS);
-    logPrintlnI("Set LoRa pins!");
-    LoRa.setPins(LORA_CS, LORA_RST, LORA_IRQ);
-
-    long freq = cfg.lora.frequencyTx;
-    logPrintlnI("frequency: " + String(freq));
-
-    if (LoRa.begin(freq) == false)
-    {
-        logPrintlnE("Starting LoRa failed!");
-        oled.Display("ERROR", "Starting LoRa failed!");
-
-        while (true) {}
-    }
-
-    LoRa.setSpreadingFactor(cfg.lora.spreadingFactor);
-    LoRa.setSignalBandwidth(cfg.lora.signalBandwidth);
-    LoRa.setCodingRate4(cfg.lora.codingRate4);
-    LoRa.enableCrc();
-
-    LoRa.setTxPower(cfg.lora.power);
-    LoRa.onTxDone(loraTXDoneCallback);
-
-    logPrintlnI("LoRa init done!");
-    oled.Display("INFO", "LoRa init done!", 2000);
-}
-
-static String formatToDateString(time_t t)
-{
-    return String(PadWithZeros(day(t), 2) + "." + PadWithZeros(month(t), 2) + "." + PadWithZeros(year(t), 4));
-}
-
-static String formatToTimeString(time_t t)
-{
-    return String(PadWithZeros(hour(t), 2) + "." + PadWithZeros(minute(t), 2) + "." + PadWithZeros(second(t), 2));
-}
-
-static String getOnOff(bool state)
-{
-    return String(state ? "On" : "Off");
-}
-
-static String PadWithZeros(unsigned int number, unsigned int width)
-{
-    char buffer[64];
-
-    snprintf(buffer, sizeof(buffer), "%.*d", width, number);
-
-    return String(buffer);
-}

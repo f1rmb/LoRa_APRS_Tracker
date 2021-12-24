@@ -1,10 +1,10 @@
 #include <SPIFFS.h>
-#include <logger.h>
 
 #ifndef CPPCHECK
 #include <ArduinoJson.h>
 #endif
 
+#include "dummylogger.h"
 #include "configuration.h"
 
 ConfigurationManagement::ConfigurationManagement(String FilePath) :
@@ -12,11 +12,11 @@ m_FilePath(FilePath)
 {
     if (!SPIFFS.begin(true))
     {
-        logPrintlnE("Mounting SPIFFS was not possible. Trying to format SPIFFS...");
+        DlogPrintlnE("Mounting SPIFFS was not possible. Trying to format SPIFFS...");
         SPIFFS.format();
         if (!SPIFFS.begin())
         {
-            logPrintlnE("Formating SPIFFS was not okay!");
+            DlogPrintlnE("Formating SPIFFS was not okay!");
         }
     }
 }
@@ -27,7 +27,7 @@ Configuration ConfigurationManagement::readConfiguration()
     File file = SPIFFS.open(m_FilePath);
     if (!file)
     {
-        logPrintlnE("Failed to open file for reading...");
+        DlogPrintlnE("Failed to open file for reading...");
         return Configuration();
     }
 
@@ -36,7 +36,7 @@ Configuration ConfigurationManagement::readConfiguration()
 
     if (error)
     {
-        logPrintlnE("Failed to read file, using default configuration.");
+        DlogPrintlnE("Failed to read file, using default configuration.");
     }
     file.close();
 
@@ -98,7 +98,7 @@ void ConfigurationManagement::writeConfiguration(Configuration conf)
 
     if (!file)
     {
-        logPrintlnE("Failed to open file for writing...");
+        DlogPrintlnE("Failed to open file for writing...");
         return;
     }
 

@@ -2,8 +2,8 @@
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
 #include <Wire.h>
-#include <logger.h>
 
+#include "dummylogger.h"
 #include "display.h"
 #include "pins.h"
 
@@ -35,7 +35,7 @@ void OLEDDisplay::Init()
     Wire.begin(OLED_SDA, OLED_SCL);
     if (!m_display.begin(SSD1306_SWITCHCAPVCC, 0x3c, false, false))
     {
-        logPrintlnE("SSD1306 allocation failed");
+        DlogPrintlnE("SSD1306 allocation failed");
         while (true) { }
     }
 
