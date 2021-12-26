@@ -111,6 +111,13 @@ Configuration ConfigurationManagement::readConfiguration()
         conf.ptt.reverse              = data["ptt_output"]["reverse"].as<bool>() | false;
     }
 
+    if (data.containsKey("location"))
+    {
+        conf.location.latitude        = data["location"]["latitude"].as<double>();
+        conf.location.longitude       = data["location"]["longitude"].as<double>();
+        conf.location.altitude        = data["location"]["altitude"].as<uint32_t>();
+    }
+
     return conf;
 }
 

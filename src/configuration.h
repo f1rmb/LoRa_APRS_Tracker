@@ -94,6 +94,22 @@ class Configuration
                 bool      reverse;
         };
 
+        class Location
+        {
+            public:
+                Location() :
+                    latitude(0.00000),
+                    longitude(0.00000),
+                    altitude(0)
+                {
+
+                }
+
+                double latitude;
+                double longitude;
+                uint32_t altitude;
+        };
+
         Configuration() :
             callsign("NOCALL-10"),
             debug(false),
@@ -111,6 +127,7 @@ class Configuration
         Smart_Beacon smart_beacon;
         LoRa         lora;
         PTT          ptt;
+        Location     location;
 };
 
 class ConfigurationManagement

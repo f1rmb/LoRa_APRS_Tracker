@@ -59,6 +59,22 @@ bool GPSDevice::Initialize(HardwareSerial &serial)
     return false;
 }
 
+bool GPSDevice::GetProtocolVersion(uint8_t &high, uint8_t &low)
+{
+    if (m_serialGPS && m_isConnected)
+    {
+        if (m_gnss.getProtocolVersion())
+        {
+            high = m_gnss.getProtocolVersionHigh();
+            low = m_gnss.getProtocolVersionLow();
+
+            return true;
+        }
+    }
+
+    return false;
+}
+
 bool GPSDevice::FactoryReset()
 {
     if (m_serialGPS && m_isConnected)
@@ -190,7 +206,7 @@ bool GPSDevice::IsSleeping()
 
 bool GPSDevice::GetPVT()
 {
-    return (m_gnss.getPVT() && (m_gnss.getInvalidLlh(0) == false));
+    return (m_gnss.getPVT() && m_gnss.getHPPOSLLH() && (m_gnss.getInvalidLlh(0) == false));
 }
 
 bool GPSDevice::GetDateAndTime(struct tm &dt)

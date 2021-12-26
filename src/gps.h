@@ -24,6 +24,10 @@ class GPSDevice
         // Initialize GPS module, using serial port "serial".
         bool          Initialize(HardwareSerial &serial);
 
+        // Get protocol version(s)
+        bool          GetProtocolVersion(uint8_t &high, uint8_t &low);
+
+
         // Trigger a factory reset
         bool          FactoryReset();
 

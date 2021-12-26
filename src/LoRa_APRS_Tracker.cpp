@@ -47,17 +47,19 @@ struct GlobalParameters
             {
                 latitude = NAN;
                 longitude = NAN;
+                altitude = NAN;
                 hdop = 99.99;
                 satellites = 0;
             }
 
             bool PositionIsValid()
             {
-                return ((isnan(latitude) == false) && (isnan(longitude) == false));
+                return ((isnan(latitude) == false) && (isnan(longitude) == false) && (isnan(altitude) == false));
             }
 
             double latitude;
             double longitude;
+            double altitude; // in feet
             double hdop;
             uint8_t satellites;
         };
@@ -97,6 +99,7 @@ struct GlobalParameters
             awakenTimePeriod(0),
             btnInterrupts(0),
             btnClicks(BUTTON_CLICKED_NONE),
+            locationFromGPS(true),
 #ifdef TTGO_T_Beam_V1_0
             batteryLastCheckTime(0),
 #endif
@@ -170,6 +173,7 @@ struct GlobalParameters
         unsigned long  awakenTimePeriod;
         volatile int   btnInterrupts;
         BUTTON_CLICKED btnClicks;
+        bool           locationFromGPS;
 #ifdef TTGO_T_Beam_V1_0
         unsigned long  batteryLastCheckTime;
 #endif
@@ -217,6 +221,30 @@ static void loadConfiguration()
     }
 }
 
+static void gpsInitialize()
+{
+    if (gps.Initialize(ss) == false)
+    {
+        oled.Display("GPS INIT", emptyString, "Initialization Failed");
+
+#ifdef TTGO_T_Beam_V1_0 // Power cycle the GPS module
+        pm.GPSDeactivate();
+        delay(2000);
+        ESP.restart(); // Reboot
+#endif
+        while (true) { }
+    }
+    else
+    {
+        uint8_t versions[2];
+
+        if (gps.GetProtocolVersion(versions[0], versions[1]))
+        {
+            oled.Display("GPS INIT", emptyString, "Initialization OK", emptyString, "Prot. Ver.: " + String(versions[0]) + "." + String(versions[1]), 5000);
+        }
+    }
+}
+
 static void loraInit()
 {
     DlogPrintlnI("Set SPI pins!");
@@ -230,7 +258,7 @@ static void loraInit()
     if (LoRa.begin(freq) == false)
     {
         DlogPrintlnE("Starting LoRa failed!");
-        oled.Display("ERROR", "Starting LoRa failed!");
+        oled.Display("ERROR", emptyString, "Starting LoRa failed!");
 
         while (true) {}
     }
@@ -244,7 +272,7 @@ static void loraInit()
     LoRa.sleep();
 
     DlogPrintlnI("LoRa init done!");
-    oled.Display("INFO", "LoRa init done!", 2000);
+    oled.Display("INFO", emptyString, "LoRa init done!", 2000);
 }
 
 // WARNING: don't use this one in *printf()
@@ -342,22 +370,10 @@ void setup()
     DlogPrintlnI("LoRa APRS Tracker by OE5BPA (Peter Buchegger)");
     oled.Init();
 
-    oled.Display("OE5BPA", "LoRa APRS Tracker", "by Peter Buchegger", emptyString, "Mods: Daniel, F1RMB", "               v0.400");
+    oled.Display("OE5BPA", "LoRa APRS Tracker", "by Peter Buchegger", emptyString, "Mods: Daniel, F1RMB", "               v0.401");
 
     loadConfiguration();
-
-    if (gps.Initialize(ss) == false)
-    {
-        oled.Display("GPS INIT", "Initialization failed");
-
-#ifdef TTGO_T_Beam_V1_0 // Power cycle the GPS module
-        pm.GPSDeactivate();
-        delay(2000);
-        ESP.restart(); // Reboot
-#endif
-        while (true) { }
-    }
-
+    gpsInitialize();
     loraInit();
 
     if (cfg.ptt.active)
@@ -379,7 +395,7 @@ void setup()
     attachInterrupt(BUTTON_PIN, [] { gParams.btnInterrupts++; }, FALLING);
 
     DlogPrintlnI("Smart Beacon is " + getOnOff(cfg.smart_beacon.active));
-    oled.Display("INFO", "Smart Beacon is " + getOnOff(cfg.smart_beacon.active), 1000);
+    oled.Display("INFO", emptyString, "Smart Beacon is " + getOnOff(cfg.smart_beacon.active), 1000);
     DlogPrintlnI("setup done...");
 
 #if 0
@@ -404,7 +420,7 @@ void setup()
     }
 #endif
 
-    oled.Display("INFO", "Running...");
+    oled.Display("INFO", emptyString, "Running...");
 
     gParams.ResetDisplayTimeout(); // Enable OLED timeout
     gParams.hasStarted = true; // main loop will start, unlock the userButton thread
@@ -445,8 +461,8 @@ void loop()
         double currentAltInFeet   = NAN;
         double currentSpeedKnot   = NAN;
         bool   timeIsValid        = false;
-        bool   gpsStillHasToSleep = gps.StillHasToSleep();
-        bool   gpsHasFix          = (gpsStillHasToSleep ? false : (gps.GetPVT() && gps.HasFix()));
+        bool   gpsStillHasToSleep = (gParams.locationFromGPS ? gps.StillHasToSleep() : false);
+        bool   gpsHasFix          = (gParams.locationFromGPS ? (gpsStillHasToSleep ? false : (gps.GetPVT() && gps.HasFix())) : true);
 
         //
         // GPS fix
@@ -473,19 +489,34 @@ void loop()
 
         if (gpsHasFix)
         {
-            gParams.lastValidGPS.latitude  = currentLat  = gps.GetLatitude();
-            gParams.lastValidGPS.longitude = currentLong = gps.GetLongitude();
-            gParams.lastValidGPS.hdop = gps.GetHDOP();
-            gParams.lastValidGPS.satellites = gps.GetSatellites();
-            currentHeading   = gps.GetHeading();
-            currentAltInFeet = gps.GetAltitudeFT();
-            currentSpeedKnot = gps.GetSpeedKT();
+            if (gParams.locationFromGPS)
+            {
+                gParams.lastValidGPS.latitude  = currentLat      = gps.GetLatitude();
+                gParams.lastValidGPS.longitude = currentLong     = gps.GetLongitude();
+                gParams.lastValidGPS.hdop                        = gps.GetHDOP();
+                gParams.lastValidGPS.satellites                  = gps.GetSatellites();
+                currentHeading                                   = gps.GetHeading();
+                gParams.lastValidGPS.altitude = currentAltInFeet = gps.GetAltitudeFT();
+                currentSpeedKnot                                 = gps.GetSpeedKT();
+
+            }
+            else
+            {
+                currentLat       = gParams.lastValidGPS.latitude;
+                currentLong      = gParams.lastValidGPS.longitude;
+                currentHeading   = gParams.previousHeading;
+                currentAltInFeet = double(gParams.lastValidGPS.altitude);
+                currentSpeedKnot = 0.0;
+            }
 
             // Check GPS clock, handle beaconing based on time (+ heading when smart beaconing is enabled)
             struct tm dt;
-            if ((timeIsValid = gps.GetDateAndTime(dt)))
+            if ((gParams.locationFromGPS == false) || (timeIsValid = gps.GetDateAndTime(dt)))
             {
-                setTime(mktime(&dt)); // Update the RTC
+                if (timeIsValid)
+                {
+                    setTime(mktime(&dt)); // Update the RTC
+                }
 
                 if (now() >= gParams.nextBeaconTimeStamp)
                 {
@@ -660,19 +691,7 @@ void loop()
             String data(msgStr.encode());
             DlogPrintlnD(data);
 
-#if 1
-            oled.Display("<< TX >>", data);
-#else
-#warning split for screen
-            String splitData[5];
-
-            splitData[0] = data.substring(0, 20);
-            splitData[1] = data.substring(21, 21+20);
-            splitData[2] = data.substring(41, 41+20);
-            splitData[3] = data.substring(61, 61+20);
-            splitData[4] = data.substring(81, 81+20);
-            oled.Display("<< TX >>", splitData[0], splitData[1], splitData[2], splitData[3], splitData[4]);
-#endif
+            oled.Display("<< TX >>", emptyString, data);
 
             if (cfg.ptt.active)
             {
@@ -823,6 +842,38 @@ void loop()
 
             case GlobalParameters::BUTTON_CLICKED_MULTI:
                 //oled.Display("MULTI", 500);
+                if (gParams.locationFromGPS)
+                {
+                    bool gpsLocationIsValid = gParams.lastValidGPS.PositionIsValid();
+
+                    if (gpsLocationIsValid == false)
+                    {
+                        gParams.lastValidGPS.latitude = cfg.location.latitude;
+                        gParams.lastValidGPS.longitude = cfg.location.longitude;
+                        gParams.lastValidGPS.altitude = (double(cfg.location.altitude) * 3.2808399); // meters to feet
+                        gParams.lastValidGPS.hdop = 0.00;
+                        gParams.lastValidGPS.satellites = 0;
+                    }
+
+                    oled.Display("LOCATION", emptyString, "Fixed",
+                            String("Lat:  ") + String(gParams.lastValidGPS.latitude, 6),
+                            String("Long: ") + String(gParams.lastValidGPS.longitude, 6),
+                            String("Alt:  ") + String(int(gParams.lastValidGPS.altitude / 3.2808399)) + "m");
+#ifdef TTGO_T_Beam_V1_0
+                    pm.GPSDeactivate();
+#endif
+                    delay(2000);
+                }
+                else
+                {
+                    oled.Display("LOCATION", emptyString, "Using GPS");
+#ifdef TTGO_T_Beam_V1_0
+                    pm.GPSActivate();
+                    delay(2000);
+                    gpsInitialize();
+#endif
+                }
+                gParams.locationFromGPS = !gParams.locationFromGPS;
                 break;
 
             default:
