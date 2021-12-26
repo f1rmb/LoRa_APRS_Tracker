@@ -13,20 +13,20 @@ class Configuration
         class Beacon
         {
             public:
-            Beacon() :
-                message("LoRa Tracker, Info: github.com/lora-aprs/LoRa_APRS_Tracker"),
-                timeout(1),
-                symbol("["),
-                overlay("/"),
-                button_tx(false)
-            {
-            }
+                Beacon() :
+                    message("LoRa Tracker, Info: github.com/lora-aprs/LoRa_APRS_Tracker"),
+                    timeout(1),
+                    symbol("["),
+                    overlay("/"),
+                    button_tx(false)
+                {
+                }
 
-            String message;
-            int    timeout;
-            String symbol;
-            String overlay;
-            bool   button_tx;
+                String   message;
+                uint32_t timeout;
+                String   symbol;
+                String   overlay;
+                bool     button_tx;
         };
 
         class Smart_Beacon
@@ -44,14 +44,14 @@ class Configuration
                 {
                 }
 
-                bool active;
-                int  turn_min;
-                int  slow_rate;
-                int  slow_speed;
-                int  fast_rate;
-                int  fast_speed;
-                int  min_tx_dist;
-                int  min_bcn;
+                bool      active;
+                uint32_t  turn_min;
+                uint32_t  slow_rate;
+                uint32_t  slow_speed;
+                uint32_t  fast_rate;
+                uint32_t  fast_speed;
+                uint32_t  min_tx_dist;
+                uint32_t  min_bcn;
         };
 
         class LoRa
@@ -67,12 +67,12 @@ class Configuration
                 {
                 }
 
-                long frequencyRx;
-                long frequencyTx;
-                int  power;
-                int  spreadingFactor;
-                long signalBandwidth;
-                int  codingRate4;
+                unsigned long frequencyRx;
+                unsigned long frequencyTx;
+                uint32_t      power;
+                uint32_t      spreadingFactor;
+                unsigned long signalBandwidth;
+                uint32_t      codingRate4;
         };
 
         class PTT
@@ -87,11 +87,11 @@ class Configuration
                 {
                 }
 
-                bool active;
-                int  io_pin;
-                int  start_delay;
-                int  end_delay;
-                bool reverse;
+                bool      active;
+                uint8_t   io_pin;
+                uint32_t  start_delay;
+                uint32_t  end_delay;
+                bool      reverse;
         };
 
         Configuration() :

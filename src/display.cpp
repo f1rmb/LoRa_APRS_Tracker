@@ -106,14 +106,12 @@ void OLEDDisplay::displayLines(const String &header, const String &line1, const 
             m_display.println(line5);
         }
 
-        //setCpuFrequencyMhz(160);
         m_display.ssd1306_command(SSD1306_SETCONTRAST);
         m_display.ssd1306_command(1);
         m_display.display();
-        //setCpuFrequencyMhz(80);
-    }
 
-    delay(msPause);
+        delay(msPause);
+    }
 }
 
 // cppcheck-suppress unusedFunction

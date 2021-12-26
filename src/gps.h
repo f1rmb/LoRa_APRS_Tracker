@@ -21,36 +21,54 @@ class GPSDevice
         GPSDevice();
         ~GPSDevice();
 
-        bool Initialize(HardwareSerial &serial);
-        bool FactoryReset();
+        // Initialize GPS module, using serial port "serial".
+        bool          Initialize(HardwareSerial &serial);
+
+        // Trigger a factory reset
+        bool          FactoryReset();
+
+        // Get the fix type (quality)
         GPS_FIXTYPE_t GetFixType();
-        bool HasFix();
-        bool HasData();
 
-        bool GetPVT();
-        bool GetDateAndTime(struct tm &t);
+        // GPS has a fix (valid fix (i.e within DOP & accuracy masks))
+        bool          HasFix();
 
-        double GetHeading();
+        // Check for available bytes on the user's specified port
+        bool          HasData();
 
+        // Position/Velocity/Time is available and
+        // valid (also checking "Invalid lon, lat, height, hMSL, lonHp, latHp, heightHp and hMSLHp")
+        bool          GetPVT();
 
-        bool SetLowPower(bool on, uint32_t millisecs);
-        bool StillHasToSleep();
+        // Get GPS time (unix format), if valid.
+        bool          GetDateAndTime(struct tm &t);
+
+        // Enter Power Saving mode for "millisecs" long (could also be forced to exit)
+        bool          SetLowPower(bool on, uint32_t millisecs);
+
+        // Get GPS sleeping (PowerSave) state
+        bool          StillHasToSleep();
+
+        // Get remaining Sleep time, in milliseconds (0 == awake)
         unsigned long GetRemainingSleepTime();
-        bool IsSleeping();
 
-        double GetLatitude();    // in Degrees
-        double GetLongitude();   // in Degrees
-        double GetAltitude();    // In Meters
-        double GetAltitudeFT();  // In Feet
-        double GetSpeedMPS();    // in meter per second
-        double GetSpeedKPH();    // in kilometer per hour
-        double GetSpeedKT();     // in Knot
+        // Get Sleeping status
+        bool          IsSleeping();
 
-        uint8_t GetSatellites();
-        double GetHDOP();
+        // Get various GPS informations (call GetPVT() first)
+        double        GetHeading();     // in Degrees
+        double        GetLatitude();    // in Degrees
+        double        GetLongitude();   // in Degrees
+        double        GetAltitude();    // In Meters
+        double        GetAltitudeFT();  // In Feet
+        double        GetSpeedMPS();    // in meter per second
+        double        GetSpeedKPH();    // in kilometer per hour
+        double        GetSpeedKT();     // in Knot
+        uint8_t       GetSatellites();  // number of acquired satellites
+        double        GetHDOP();        // Horizontal Dilution Of Precision
 
+        // Return distance between two locations, in meters
         static double DistanceBetweenTwoCoords(double lat_a, double lng_a, double lat_b, double lng_b);
-
 
     private:
         bool connect();

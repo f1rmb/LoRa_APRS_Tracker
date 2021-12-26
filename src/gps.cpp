@@ -1,7 +1,5 @@
 
 
-//#include <list>
-//#include <Arduino.h>
 #include "pins.h"
 #include "gps.h"
 
@@ -111,31 +109,20 @@ bool GPSDevice::SetLowPower(bool on, uint32_t millisecs)
 
         if (on)
         {
-            // Check if we have a valid fix first.
-            if (HasFix())
+            if ((result = m_gnss.powerSaveMode(true)))
             {
-                GPS_FIXTYPE_t fType = GetFixType();
-
-                // Then a valid FIX
-                if ((fType >= GPS_FIXTYPE_3D) && (fType <= GPS_FIXTYPE_GNSS))
-                {
-                    if ((result = m_gnss.powerSaveMode(true)))
-                    {
-                        m_sleepMS = millisecs;
-                    }
-                }
+                m_sleepMS = millisecs;
             }
         }
         else
         {
             if ((result = m_gnss.powerSaveMode(false)))
             {
-                // ...
+                m_sleepMS = 0;
             }
         }
 
-
-        m_lowPowerModeEnabled = ((result == false) ? false : on);
+        m_lowPowerModeEnabled = (result ? on : false);
 
         if (result)
         {
@@ -150,7 +137,7 @@ bool GPSDevice::SetLowPower(bool on, uint32_t millisecs)
 
 bool GPSDevice::StillHasToSleep()
 {
-    return (m_lowPowerModeEnabled && ((millis() - m_lastSleepTime) < m_sleepMS));
+    return (m_lowPowerModeEnabled && ((millis() - m_lastSleepTime) <= m_sleepMS));
 }
 
 unsigned long GPSDevice::GetRemainingSleepTime()
@@ -203,24 +190,24 @@ bool GPSDevice::IsSleeping()
 
 bool GPSDevice::GetPVT()
 {
-    return (m_gnss.getPVT() && (m_gnss.getInvalidLlh() == false));
+    return (m_gnss.getPVT() && (m_gnss.getInvalidLlh(0) == false));
 }
 
-bool GPSDevice::GetDateAndTime(struct tm &t)
+bool GPSDevice::GetDateAndTime(struct tm &dt)
 {
-    if (m_gnss.getTimeValid() && m_gnss.getTimeFullyResolved())
+    if (m_gnss.getTimeValid(0) && m_gnss.getTimeFullyResolved(0))
     {
         /* Convert to unix time
          *  The Unix epoch (or Unix time or POSIX time or Unix timestamp) is the number of seconds that have elapsed
          *  since January 1, 1970 (midnight UTC/GMT), not counting leap seconds (in ISO 8601: 1970-01-01T00:00:00Z).
          */
-        t.tm_sec   = m_gnss.getSecond(0);
-        t.tm_min   = m_gnss.getMinute(0);
-        t.tm_hour  = m_gnss.getHour(0);
-        t.tm_mday  = m_gnss.getDay(0);
-        t.tm_mon   = m_gnss.getMonth(0) - 1;
-        t.tm_year  = m_gnss.getYear(0) - 1900;
-        t.tm_isdst = false;
+        dt.tm_sec   = m_gnss.getSecond(0);
+        dt.tm_min   = m_gnss.getMinute(0);
+        dt.tm_hour  = m_gnss.getHour(0);
+        dt.tm_mday  = m_gnss.getDay(0);
+        dt.tm_mon   = m_gnss.getMonth(0) - 1;
+        dt.tm_year  = m_gnss.getYear(0) - 1900;
+        dt.tm_isdst = false;
 
         return true;
     }
@@ -230,22 +217,22 @@ bool GPSDevice::GetDateAndTime(struct tm &t)
 
 double GPSDevice::GetHeading()
 {
-    return (m_gnss.getHeading() * 1e-5);
+    return (m_gnss.getHeading(0) * 1e-5);
 }
 
 double GPSDevice::GetLatitude()
 {
-    return (m_gnss.getLatitude() * 1e-7);
+    return (m_gnss.getLatitude(0) * 1e-7);
 }
 
 double GPSDevice::GetLongitude()
 {
-    return (m_gnss.getLongitude() * 1e-7);
+    return (m_gnss.getLongitude(0) * 1e-7);
 }
 
 double GPSDevice::GetAltitude() // Meters
 {
-    return (m_gnss.getAltitudeMSL() * 1e-3); // mm to meter
+    return (m_gnss.getAltitudeMSL(0) * 1e-3); // mm to meter
 }
 
 double GPSDevice::GetAltitudeFT()
@@ -255,7 +242,7 @@ double GPSDevice::GetAltitudeFT()
 
 double GPSDevice::GetSpeedMPS()
 {
-    return (m_gnss.getGroundSpeed() * 1e-3); // mm/s to m/s
+    return (m_gnss.getGroundSpeed(0) * 1e-3); // mm/s to m/s
 }
 
 double GPSDevice::GetSpeedKPH()
@@ -270,12 +257,12 @@ double GPSDevice::GetSpeedKT()
 
 uint8_t GPSDevice::GetSatellites()
 {
-    return (m_gnss.getSIV());
+    return (m_gnss.getSIV(0));
 }
 
 double GPSDevice::GetHDOP()
 {
-    return (m_gnss.getHorizontalDOP() * 1e-2);
+    return (m_gnss.getHorizontalDOP(0) * 1e-2);
 }
 
 // Took from TinyGPSPlus
