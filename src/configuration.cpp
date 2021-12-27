@@ -130,6 +130,16 @@ Configuration ConfigurationManagement::readConfiguration()
             conf.location.longitude = data["location"]["longitude"];
         }
         conf.location.altitude      = data["location"]["altitude"];
+
+        if (data["location"].containsKey("symbol"))
+        {
+            conf.location.symbol        = data["location"]["symbol"].as<String>();
+        }
+
+        if (data["location"].containsKey("overlay"))
+        {
+            conf.location.overlay       = data["location"]["overlay"].as<String>();
+        }
     }
 
     return conf;
@@ -182,6 +192,8 @@ void ConfigurationManagement::writeConfiguration(Configuration conf)
     data["location"]["latitude"]        = conf.location.latitude;
     data["location"]["longitude"]       = conf.location.longitude;
     data["location"]["altitude"]        = conf.location.altitude;
+    data["location"]["symbol"]          = conf.location.symbol;
+    data["location"]["overlay"]         = conf.location.overlay;
 
     serializeJson(data, file);
     file.close();

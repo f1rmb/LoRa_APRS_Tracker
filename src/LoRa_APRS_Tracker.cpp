@@ -666,7 +666,8 @@ void loop()
             }
 
 
-            String aprsmsg("!" + latStr + cfg.beacon.overlay + longStr + cfg.beacon.symbol + courseAndSpeedStr + altStr);
+            String aprsmsg("!" + latStr + (gParams.locationFromGPS ? cfg.beacon.overlay : cfg.location.overlay) + longStr +
+                    (gParams.locationFromGPS ? cfg.beacon.symbol : cfg.location.symbol) + courseAndSpeedStr + altStr);
 
             // message_text every 10's packet (i.e. if we have beacon rate 1min at high
             // speed -> every 10min). May be enforced above (at expirey of smart beacon

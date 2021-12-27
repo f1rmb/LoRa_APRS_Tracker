@@ -16,17 +16,17 @@ class Configuration
                 Beacon() :
                     message("LoRa Tracker, Info: github.com/lora-aprs/LoRa_APRS_Tracker"),
                     timeout(1),
+                    button_tx(false),
                     symbol("["),
-                    overlay("/"),
-                    button_tx(false)
+                    overlay("/")
                 {
                 }
 
                 String   message;
                 uint32_t timeout;
+                bool     button_tx;
                 String   symbol;
                 String   overlay;
-                bool     button_tx;
         };
 
         class Smart_Beacon
@@ -100,7 +100,9 @@ class Configuration
                 Location() :
                     latitude(0.00000),
                     longitude(0.00000),
-                    altitude(0)
+                    altitude(0),
+                    symbol("i"),
+                    overlay("/")
                 {
 
                 }
@@ -108,6 +110,8 @@ class Configuration
                 double latitude;
                 double longitude;
                 uint32_t altitude;
+                String   symbol;
+                String   overlay;
         };
 
         Configuration() :
