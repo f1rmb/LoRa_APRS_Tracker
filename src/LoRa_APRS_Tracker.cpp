@@ -91,13 +91,12 @@ struct GlobalParameters
             batteryVoltage(""),
             batteryChargeCurrent(""),
             gpsIsSleeping(false),
-            gpsSleepActionTime(0),
-            gpsHadFix(false),
+            gpsWakeupCount(0),
             lastUpdateTime(millis()),
             gpsFixTime(0),
             lightSleepExitTime(0),
             awakenTimePeriod(0),
-            btnInterrupts(0),
+            ///btnInterrupts(0),
             btnClicks(BUTTON_CLICKED_NONE),
             locationFromGPS(true),
 #ifdef TTGO_T_Beam_V1_0
@@ -166,13 +165,12 @@ struct GlobalParameters
         String         batteryVoltage;
         String         batteryChargeCurrent;
         bool           gpsIsSleeping;
-        unsigned long  gpsSleepActionTime;
-        bool           gpsHadFix;
+        uint32_t       gpsWakeupCount;
         unsigned long  lastUpdateTime;
         unsigned long  gpsFixTime;
         unsigned long  lightSleepExitTime;
         unsigned long  awakenTimePeriod;
-        volatile int   btnInterrupts;
+        ///volatile int   btnInterrupts;
         BUTTON_CLICKED btnClicks;
         bool           locationFromGPS;
 #ifdef TTGO_T_Beam_V1_0
@@ -230,7 +228,7 @@ static void gpsInitialize()
 
 #ifdef TTGO_T_Beam_V1_0 // Power cycle the GPS module
         pm.GPSDeactivate();
-        delay(2000);
+        delay(5000);
         ESP.restart(); // Reboot
 #endif
         while (true) { }
@@ -393,7 +391,7 @@ void setup()
     userBtn.attachClick(buttonClickCallback);
     userBtn.attachDoubleClick(buttonDoubleClickCallback);
     userBtn.attachMultiClick(buttonMultiPressCallback);
-    attachInterrupt(BUTTON_PIN, [] { gParams.btnInterrupts++; }, FALLING);
+    ///attachInterrupt(BUTTON_PIN, [] { gParams.btnInterrupts++; }, FALLING);
 
     DlogPrintlnI("Smart Beacon is " + getOnOff(cfg.smart_beacon.active));
     oled.Display("INFO", emptyString, "Smart Beacon is " + getOnOff(cfg.smart_beacon.active), 1000);
@@ -435,6 +433,7 @@ void loop()
     if ((millis() - gParams.lastUpdateTime) >= 1000) // Update each 1 second
     {
         gParams.lastUpdateTime = millis();
+
 #if 0
         while (Serial.available() > 0)
         {
@@ -453,8 +452,21 @@ void loop()
             {
                 ESP.restart();
             }
+            else if (c == 'P')
+            {
+                Serial.println("PowerCycle");
+#ifdef TTGO_T_Beam_V1_0 // Power cycle the GPS module
+                pm.GPSDeactivate();
+                delay(5000);
+                ESP.restart(); // Reboot
+#endif
+
+            }
         }
 #endif
+
+        gParams.gpsWakeupCount -= ((gParams.gpsWakeupCount > 0) ? 1 : 0);
+
 
         double currentLat         = NAN;
         double currentLong        = NAN;
@@ -462,29 +474,21 @@ void loop()
         double currentAltInFeet   = NAN;
         double currentSpeedKnot   = NAN;
         bool   timeIsValid        = false;
-        bool   gpsStillHasToSleep = (gParams.locationFromGPS ? gps.StillHasToSleep() : false);
+        bool   gpsStillHasToSleep = (gParams.locationFromGPS ? (((gParams.gpsWakeupCount > 0) || gps.StillHasToSleep()) ? true : false) : false);
         bool   gpsHasFix          = (gParams.locationFromGPS ? (gpsStillHasToSleep ? false : (gps.GetPVT() && gps.HasFix())) : true);
 
         //
         // GPS fix
         //
-        // GPS acquired a fix, start to countdown for power saving state
+        // GPS acquired a Fix, start to countdown for power saving state
         if ((gpsStillHasToSleep == false) && gpsHasFix && (gParams.gpsFixTime == 0))
         {
             gParams.gpsFixTime = millis();
         }
 
-        // Keep track of the GPS fix, regardless of the GPS PowerSave status (sleeping or not).
-        if ((gParams.gpsHadFix == false) && gpsHasFix)
+        // Reset stored location when the Fix is lost.
+        if (gParams.locationFromGPS && ((gps.HasFix() == false) && gParams.lastValidGPS.PositionIsValid()))
         {
-            //Serial.println("GOT FIX");
-            gParams.gpsHadFix = true;
-        }
-        else if (gParams.gpsHadFix && ((gpsStillHasToSleep == false) && (gpsHasFix == false)))
-        {
-            //Serial.println("LOST FIX");
-            gParams.gpsHadFix = false;
-
             gParams.lastValidGPS.Reset();
         }
 
@@ -715,9 +719,11 @@ void loop()
 
                 LoRa.sleep();
 
+#if 0
                 Serial.print("TX ==> '");
                 Serial.print(data.c_str());
                 Serial.println("'");
+#endif
             }
             else
             {
@@ -745,16 +751,20 @@ void loop()
         oled.Display(cfg.callsign,
                 formatToDateString(n) + " " + formatToTimeString(n),
                 String("Sats: ") + (posIsValid ? String(gParams.lastValidGPS.satellites) : "-") + " HDOP: " + (posIsValid ? String(gParams.lastValidGPS.hdop) : "--.--"),
-                String("Nxt Bcn: ") + (gParams.gpsHadFix ? (cfg.smart_beacon.active ? "~" : "") + formatToTimeString(gParams.nextBeaconTimeStamp) : "--:--:--"),
+                String("Nxt Bcn: ") + (posIsValid ? (cfg.smart_beacon.active ? "~" : "") + formatToTimeString(gParams.nextBeaconTimeStamp) : "--:--:--"),
                 (gParams.batteryIsConnected ? (String("Bat: ") + gParams.batteryVoltage + "V, " + gParams.batteryChargeCurrent + "mA") : "Powered via USB"),
                 String("Smart Beacon: " + getOnOff(cfg.smart_beacon.active)));
 
 #if 0
         Serial.println(String("Sats: ") + String(gParams.lastValidGPS.satellites) + " HDOP: " + gParams.lastValidGPS.hdop +
-                " GPS: " + (gpsStillHasToSleep ? "Sleeping" : "Awake") + (gpsHasFix ? " FIX" : " NOFIX"));
+                " GPS: " + (posIsValid ? "Sleeping" : "Awake") + (gpsHasFix ? " FIX" : " NOFIX"));
         Serial.println(String("Sats: ") + String(gParams.lastValidGPS.satellites) + " HDOP: " + gParams.lastValidGPS.hdop +
-                " GPS: " + (gpsStillHasToSleep ? "Sl" : "Ake"));
+                " GPS: " + (posIsValid ? "Sl" : "Ake"));
         Serial.println(String("Nxt Bcn: ") + (cfg.smart_beacon.active ? "~" : "") + formatToTimeString(gParams.nextBeaconTimeStamp) + " / " + formatToTimeString(n));
+#else
+        Serial.println(String("Sats: ") + (posIsValid ? String(gParams.lastValidGPS.satellites) : "-") + " HDOP: " + (posIsValid ? String(gParams.lastValidGPS.hdop) : "--.--"));
+        Serial.println(String("Nxt Bcn: ") + (posIsValid ? (cfg.smart_beacon.active ? "~" : "") + formatToTimeString(gParams.nextBeaconTimeStamp) : "--:--:--"));
+
 #endif
 
         if (timeIsValid)
@@ -791,103 +801,105 @@ void loop()
 
 
         // GPS Sleep/Awake cycling
-        if ((gpsStillHasToSleep == false) && gpsHasFix && ((gParams.gpsFixTime >= 0) && ((millis() - gParams.gpsFixTime) > AWAKE_TIME_MS)))
+        if (gParams.locationFromGPS)
         {
-            gps.SetLowPower(true, SLEEP_TIME_MS);
-            gParams.gpsFixTime = 0;
-        }
-        else if (gps.IsSleeping() && (gps.StillHasToSleep() == false))
-        {
-            gps.SetLowPower(false, 0);
-            gParams.gpsFixTime = 0;
+            if ((gpsStillHasToSleep == false) && gpsHasFix && ((gParams.gpsFixTime >= 0) && ((millis() - gParams.gpsFixTime) > AWAKE_TIME_MS)))
+            {
+                gps.SetLowPower(true, SLEEP_TIME_MS);
+                gParams.gpsFixTime = 0;
+                Serial.println("Sleeping");
+            }
+            else if (gps.IsSleeping() && (gps.StillHasToSleep() == false))
+            {
+                gps.SetLowPower(false, 0);
+                gParams.gpsFixTime = 0;
+                //gParams.gpsWakeupCount = 3; // wait 3 secs before expecting the GPS is fully operationnal
+                Serial.println("Awake");
+            }
         }
     }
 
-    if (gParams.btnInterrupts > 0)
-    {
-        if (cfg.display_timeout > 0)
-        {
-            //gParams.ResetDisplayTimeout();
-        }
-        gParams.btnInterrupts = 0;
-    }
+//    if (gParams.btnInterrupts > 0)
+//    {
+//        if (cfg.display_timeout > 0)
+//        {
+//            //gParams.ResetDisplayTimeout();
+//        }
+//        gParams.btnInterrupts = 0;
+//    }
 
     // User button has been clicked
     if (gParams.btnClicks != GlobalParameters::BUTTON_CLICKED_NONE)
     {
-        switch (gParams.btnClicks)
+        bool oledWasOn = oled.IsActivated();
+
+        gParams.ResetDisplayTimeout(); // Reset the OLED timeout on any button event
+
+        if (oledWasOn)
         {
-            case GlobalParameters::BUTTON_CLICKED_ONCE:
-                {
-                    bool oledWasOn = oled.IsActivated();
-
-                    //oled.Display("SINGLE", 500);
-
-                    gParams.ResetDisplayTimeout(); // Reset the OLED timeout on any button event
-
-                    if (oledWasOn == false) // The OLED was off, hence we won't go further this time
+            switch (gParams.btnClicks)
+            {
+                case GlobalParameters::BUTTON_CLICKED_ONCE:
                     {
-                        break;
+                        // Send a frame if the screen is already lit.
+                        if (cfg.beacon.button_tx)
+                        {
+                            gParams.sendPositionUpdate = true;
+                        }
                     }
+                    break;
 
-                    // Send a frame if the screen is already lit.
-                    if (cfg.beacon.button_tx)
+                case GlobalParameters::BUTTON_CLICKED_TWICE:
+                    //oled.Display("DOUBLE", 500);
+                    if (cfg.display_timeout > 0)
                     {
-                        gParams.sendPositionUpdate = true;
+                        uint32_t dispTo = ((gParams.GetDisplayTimeout() == cfg.display_timeout) ? 0 : cfg.display_timeout);
+
+                        gParams.ResetDisplayTimeout();
+                        oled.Display("SCREEN", emptyString, "Timeout: " + ((dispTo > 0) ? String(dispTo) + "ms" : "disabled"), 2000);
+                        gParams.SetDisplayTimeout(dispTo);
                     }
-                }
-                break;
+                    break;
 
-            case GlobalParameters::BUTTON_CLICKED_TWICE:
-                //oled.Display("DOUBLE", 500);
-                if (cfg.display_timeout > 0)
-                {
-                    uint32_t dispTo = ((gParams.GetDisplayTimeout() == cfg.display_timeout) ? 0 : cfg.display_timeout);
-
-                    gParams.ResetDisplayTimeout();
-                    oled.Display("SCREEN", emptyString, "Timeout: " + ((dispTo > 0) ? String(dispTo) + "ms" : "disabled"), 2000);
-                    gParams.SetDisplayTimeout(dispTo);
-                }
-                break;
-
-            case GlobalParameters::BUTTON_CLICKED_MULTI:
-                //oled.Display("MULTI", 500);
-                if (gParams.locationFromGPS)
-                {
-                    bool gpsLocationIsValid = gParams.lastValidGPS.PositionIsValid();
-
-                    if (gpsLocationIsValid == false)
+                case GlobalParameters::BUTTON_CLICKED_MULTI:
+                    //oled.Display("MULTI", 500);
+                    if (gParams.locationFromGPS)
                     {
-                        gParams.lastValidGPS.latitude = cfg.location.latitude;
-                        gParams.lastValidGPS.longitude = cfg.location.longitude;
-                        gParams.lastValidGPS.altitude = (double(cfg.location.altitude) * 3.2808399); // meters to feet
-                        gParams.lastValidGPS.hdop = 0.00;
-                        gParams.lastValidGPS.satellites = 0;
-                    }
+                        bool gpsLocationIsValid = gParams.lastValidGPS.PositionIsValid();
 
-                    oled.Display("LOCATION", emptyString, "Fixed",
-                            String("Lat:  ") + String(gParams.lastValidGPS.latitude, 6),
-                            String("Long: ") + String(gParams.lastValidGPS.longitude, 6),
-                            String("Alt:  ") + String(int(gParams.lastValidGPS.altitude / 3.2808399)) + "m");
+                        if (gpsLocationIsValid == false)
+                        {
+                            gParams.lastValidGPS.latitude = cfg.location.latitude;
+                            gParams.lastValidGPS.longitude = cfg.location.longitude;
+                            gParams.lastValidGPS.altitude = (double(cfg.location.altitude) * 3.2808399); // meters to feet
+                            gParams.lastValidGPS.hdop = 0.00;
+                            gParams.lastValidGPS.satellites = 0;
+                        }
+
+                        oled.Display("LOCATION", emptyString, "Fixed",
+                                String("Lat:  ") + String(gParams.lastValidGPS.latitude, 6),
+                                String("Long: ") + String(gParams.lastValidGPS.longitude, 6),
+                                String("Alt:  ") + String(int(gParams.lastValidGPS.altitude / 3.2808399)) + "m");
 #ifdef TTGO_T_Beam_V1_0
-                    pm.GPSDeactivate();
+                        pm.GPSDeactivate();
 #endif
-                    delay(2000);
-                }
-                else
-                {
-                    oled.Display("LOCATION", emptyString, "Using GPS");
+                        delay(2000);
+                    }
+                    else
+                    {
+                        oled.Display("LOCATION", emptyString, "Using GPS");
 #ifdef TTGO_T_Beam_V1_0
-                    pm.GPSActivate();
-                    delay(2000);
-                    gpsInitialize();
+                        pm.GPSActivate();
+                        delay(2000);
+                        gpsInitialize();
 #endif
-                }
-                gParams.locationFromGPS = !gParams.locationFromGPS;
-                break;
+                    }
+                    gParams.locationFromGPS = !gParams.locationFromGPS;
+                    break;
 
-            default:
-                break;
+                default:
+                    break;
+            }
         }
 
         gParams.btnClicks = GlobalParameters::BUTTON_CLICKED_NONE;
@@ -895,7 +907,7 @@ void loop()
 
 
     // ESP32 Light Sleep
-    if ((userBtn.isIdle() && (gParams.btnInterrupts == 0)) && // User button is released, no button interrupt pending
+    if ((userBtn.isIdle() /*&& (gParams.btnInterrupts == 0)*/) && // User button is released, no button interrupt pending
             ((gParams.GetDisplayTimeout() == 0) || (oled.IsActivated() == false)) && // Screen is OFF (if timeout is set)
             ((gParams.lightSleepExitTime == 0) || ((millis() - gParams.lightSleepExitTime) > gParams.awakenTimePeriod))) // Wait 5s after awaken from the button before going to sleep.
     {

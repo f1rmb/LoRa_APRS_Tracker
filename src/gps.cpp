@@ -13,7 +13,7 @@ m_isConnected(false),
 m_fixType(0),
 m_lowPowerModeEnabled(false),
 m_lastSleepTime(0),
-m_sleepMS(5000)
+m_sleepMS(0)
 {
 }
 
@@ -26,6 +26,8 @@ bool GPSDevice::Initialize(HardwareSerial &serial)
 {
     m_serialGPS = &serial;
     m_serialGPS->begin(GPS_BAUDRATE, SERIAL_8N1, GPS_TX, GPS_RX);
+
+    //m_gnss.enableDebugging(Serial);
 
     for (int i = 0; (i < 3) && !connect(); i++)
     {
@@ -125,17 +127,33 @@ bool GPSDevice::SetLowPower(bool on, uint32_t millisecs)
 
         if (on)
         {
-            if ((result = m_gnss.powerSaveMode(true)))
+#if 1
+            for (uint8_t i = 0; (i < 3) && ((result = m_gnss.powerSaveMode(true, 2000U)) == false); i++)
+            {
+                delay(200);
+            }
+
+            m_sleepMS = millisecs;
+#else
+            if ((result = m_gnss.powerSaveMode(true, 2000U)))
             {
                 m_sleepMS = millisecs;
             }
+#endif
         }
         else
         {
-            if ((result = m_gnss.powerSaveMode(false)))
+#if 1
+            for (uint8_t i = 0; (i < 3) && ((result = m_gnss.powerSaveMode(false, 2000U)) == false); i++)
+            {
+                delay(200);
+            }
+#else
+            if ((result = m_gnss.powerSaveMode(false, 2000U)))
             {
                 m_sleepMS = 0;
             }
+#endif
         }
 
         m_lowPowerModeEnabled = (result ? on : false);
@@ -153,7 +171,7 @@ bool GPSDevice::SetLowPower(bool on, uint32_t millisecs)
 
 bool GPSDevice::StillHasToSleep()
 {
-    return (m_lowPowerModeEnabled && ((millis() - m_lastSleepTime) <= m_sleepMS));
+    return (m_lowPowerModeEnabled && ((millis() - m_lastSleepTime) < m_sleepMS));
 }
 
 unsigned long GPSDevice::GetRemainingSleepTime()
@@ -171,7 +189,7 @@ bool GPSDevice::IsSleeping()
 #if 0
     if (m_lowPowerModeEnabled)
     {
-        uint8_t lowPowerMode = m_gnss.getPowerSaveMode();
+        uint8_t lowPowerMode = m_gnss.getPowerSaveMode(2000U);
 
         if (lowPowerMode == 255)
         {
@@ -206,12 +224,12 @@ bool GPSDevice::IsSleeping()
 
 bool GPSDevice::GetPVT()
 {
-    return (m_gnss.getPVT() && (m_gnss.getInvalidLlh(0) == false));
+    return (m_gnss.getPVT(2000U) && (m_gnss.getInvalidLlh(2000U) == false));
 }
 
 bool GPSDevice::GetDateAndTime(struct tm &dt)
 {
-    if (m_gnss.getTimeValid(0) && m_gnss.getTimeFullyResolved(0))
+    if (m_gnss.getTimeValid() && m_gnss.getTimeFullyResolved())
     {
         /* Convert to unix time
          *  The Unix epoch (or Unix time or POSIX time or Unix timestamp) is the number of seconds that have elapsed
@@ -233,22 +251,22 @@ bool GPSDevice::GetDateAndTime(struct tm &dt)
 
 double GPSDevice::GetHeading()
 {
-    return (m_gnss.getHeading(0) * 1e-5);
+    return (m_gnss.getHeading() * 1e-5);
 }
 
 double GPSDevice::GetLatitude()
 {
-    return (m_gnss.getLatitude(0) * 1e-7);
+    return (m_gnss.getLatitude() * 1e-7);
 }
 
 double GPSDevice::GetLongitude()
 {
-    return (m_gnss.getLongitude(0) * 1e-7);
+    return (m_gnss.getLongitude() * 1e-7);
 }
 
 double GPSDevice::GetAltitude() // Meters
 {
-    return (m_gnss.getAltitudeMSL(0) * 1e-3); // mm to meter
+    return (m_gnss.getAltitudeMSL() * 1e-3); // mm to meter
 }
 
 double GPSDevice::GetAltitudeFT()
@@ -258,7 +276,7 @@ double GPSDevice::GetAltitudeFT()
 
 double GPSDevice::GetSpeedMPS()
 {
-    return (m_gnss.getGroundSpeed(0) * 1e-3); // mm/s to m/s
+    return (m_gnss.getGroundSpeed() * 1e-3); // mm/s to m/s
 }
 
 double GPSDevice::GetSpeedKPH()
@@ -273,12 +291,12 @@ double GPSDevice::GetSpeedKT()
 
 uint8_t GPSDevice::GetSatellites()
 {
-    return (m_gnss.getSIV(0));
+    return (m_gnss.getSIV());
 }
 
 double GPSDevice::GetHDOP()
 {
-    return (m_gnss.getHorizontalDOP(0) * 1e-2);
+    return (m_gnss.getHorizontalDOP() * 1e-2);
 }
 
 // Took from TinyGPSPlus
@@ -326,13 +344,13 @@ bool GPSDevice::setUBXMode()
     if (m_serialGPS && m_isConnected)
     {
         m_lowPowerModeEnabled = false;
-        m_gnss.powerSaveMode(false);
+        m_gnss.powerSaveMode(false, 2000U);
 
         // Configure the U-Blox
         if (m_gnss.setUART1Output(COM_TYPE_UBX))
         {
             delay(2000);
-            if (m_gnss.setNavigationFrequency(1) && m_gnss.setAutoPVT(true))
+            if (m_gnss.setNavigationFrequency(1, 2000U) && m_gnss.setAutoPVT(true, uint16_t(2000)))
             {
                 m_gnss.flushPVT();
                 return true;
