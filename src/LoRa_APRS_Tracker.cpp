@@ -891,6 +891,7 @@ void loop()
                         delay(2000);
                         gpsInitialize();
 #endif
+                        gParams.lastValidGPS.Reset();
                     }
                     gParams.locationFromGPS = !gParams.locationFromGPS;
                     break;
