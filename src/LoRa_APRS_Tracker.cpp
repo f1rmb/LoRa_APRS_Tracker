@@ -109,14 +109,15 @@ struct GlobalParameters
         {
         }
 
+        uint32_t GetDisplayTimeout()
+        {
+            return m_displayTimeout;
+        }
+
         void SetDisplayTimeout(uint32_t timeout)
         {
             m_displayTimeout = timeout;
-
-            if (timeout == 0) // If timeout is set to 0ms, disable it
-            {
-                m_displayTimeoutEnabled = false;
-            }
+            m_displayTimeoutEnabled = (timeout > 0); // If timeout is set to 0ms, disable it
         }
 
         void ResetDisplayTimeout()
@@ -370,7 +371,7 @@ void setup()
     DlogPrintlnI("LoRa APRS Tracker by OE5BPA (Peter Buchegger)");
     oled.Init();
 
-    oled.Display("OE5BPA", "LoRa APRS Tracker", "by Peter Buchegger", emptyString, "Mods: Daniel, F1RMB", "               v0.401");
+    oled.Display("OE5BPA", "LoRa APRS Tracker", "by Peter Buchegger", emptyString, "Mods: Daniel, F1RMB", "               v0.402");
 
     loadConfiguration();
     gpsInitialize();
@@ -805,7 +806,7 @@ void loop()
     {
         if (cfg.display_timeout > 0)
         {
-            gParams.ResetDisplayTimeout();
+            //gParams.ResetDisplayTimeout();
         }
         gParams.btnInterrupts = 0;
     }
@@ -838,6 +839,14 @@ void loop()
 
             case GlobalParameters::BUTTON_CLICKED_TWICE:
                 //oled.Display("DOUBLE", 500);
+                if (cfg.display_timeout > 0)
+                {
+                    uint32_t dispTo = ((gParams.GetDisplayTimeout() == cfg.display_timeout) ? 0 : cfg.display_timeout);
+
+                    gParams.ResetDisplayTimeout();
+                    oled.Display("SCREEN", emptyString, "Timeout: " + ((dispTo > 0) ? String(dispTo) + "ms" : "disabled"), 2000);
+                    gParams.SetDisplayTimeout(dispTo);
+                }
                 break;
 
             case GlobalParameters::BUTTON_CLICKED_MULTI:
@@ -886,7 +895,7 @@ void loop()
 
     // ESP32 Light Sleep
     if ((userBtn.isIdle() && (gParams.btnInterrupts == 0)) && // User button is released, no button interrupt pending
-            ((cfg.display_timeout == 0) || (oled.IsActivated() == false)) && // Screen is OFF (if timeout is set)
+            ((gParams.GetDisplayTimeout() == 0) || (oled.IsActivated() == false)) && // Screen is OFF (if timeout is set)
             ((gParams.lightSleepExitTime == 0) || ((millis() - gParams.lightSleepExitTime) > gParams.awakenTimePeriod))) // Wait 5s after awaken from the button before going to sleep.
     {
         esp_sleep_wakeup_cause_t cause;
@@ -903,8 +912,6 @@ void loop()
         setCpuFrequencyMhz(20);
         cause = execLightSleep(sleepTime);
         setCpuFrequencyMhz(80);
-
-        //Serial.println("X");
 
         gParams.lightSleepExitTime = millis();
 

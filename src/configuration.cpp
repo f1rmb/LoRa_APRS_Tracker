@@ -21,6 +21,11 @@ m_FilePath(FilePath)
     }
 }
 
+static bool toDouble(const String &s, double *v)
+{
+    return (sscanf(s.c_str(), "%lf", v) == 1);
+}
+
 // cppcheck-suppress unusedFunction
 Configuration ConfigurationManagement::readConfiguration()
 {
@@ -51,9 +56,9 @@ Configuration ConfigurationManagement::readConfiguration()
         conf.callsign                 = data["callsign"].as<String>();
     }
 
-    conf.debug                        = data["debug"].as<bool>() | false;
-    conf.enhance_precision            = data["enhance_precision"].as<bool>() | false;
-    conf.display_timeout              = data["display_timeout"].as<uint32_t>() | Configuration::CONFIGURATION_DISPLAY_TIMEOUT;
+    conf.debug                        = data["debug"] | false;
+    conf.enhance_precision            = data["enhance_precision"] | false;
+    conf.display_timeout              = data["display_timeout"] | Configuration::CONFIGURATION_DISPLAY_TIMEOUT;
 
     if (data.containsKey("beacon"))
     {
@@ -62,7 +67,12 @@ Configuration ConfigurationManagement::readConfiguration()
             conf.beacon.message       = data["beacon"]["message"].as<String>();
         }
 
-        conf.beacon.timeout = data["beacon"]["timeout"].as<uint32_t>() | 1;
+        conf.beacon.timeout = data["beacon"]["timeout"] | 1;
+
+        if (data["beacon"].containsKey("button_tx"))
+        {
+            conf.beacon.button_tx     = data["beacon"]["button_tx"] | false;
+        }
 
         if (data["beacon"].containsKey("symbol"))
         {
@@ -73,49 +83,53 @@ Configuration ConfigurationManagement::readConfiguration()
         {
             conf.beacon.overlay       = data["beacon"]["overlay"].as<String>();
         }
-
-        if (data["beacon"].containsKey("button_tx"))
-        {
-            conf.beacon.button_tx     = data["beacon"]["button_tx"].as<bool>() | false;
-        }
     }
 
     if (data.containsKey("smart_beacon"))
     {
-        conf.smart_beacon.active      = data["smart_beacon"]["active"].as<bool>() | false;
-        conf.smart_beacon.turn_min    = data["smart_beacon"]["turn_min"].as<uint32_t>() | 25;
-        conf.smart_beacon.slow_rate   = data["smart_beacon"]["slow_rate"].as<uint32_t>() | 300;
-        conf.smart_beacon.slow_speed  = data["smart_beacon"]["slow_speed"].as<uint32_t>() | 10;
-        conf.smart_beacon.fast_rate   = data["smart_beacon"]["fast_rate"].as<uint32_t>() | 60;
-        conf.smart_beacon.fast_speed  = data["smart_beacon"]["fast_speed"].as<uint32_t>() | 100;
-        conf.smart_beacon.min_tx_dist = data["smart_beacon"]["min_tx_dist"].as<uint32_t>() | 100;
-        conf.smart_beacon.min_bcn     = data["smart_beacon"]["min_bcn"].as<uint32_t>() | 5;
+        conf.smart_beacon.active      = data["smart_beacon"]["active"] | false;
+        conf.smart_beacon.turn_min    = data["smart_beacon"]["turn_min"] | 25;
+        conf.smart_beacon.slow_rate   = data["smart_beacon"]["slow_rate"] | 300;
+        conf.smart_beacon.slow_speed  = data["smart_beacon"]["slow_speed"] | 10;
+        conf.smart_beacon.fast_rate   = data["smart_beacon"]["fast_rate"] | 60;
+        conf.smart_beacon.fast_speed  = data["smart_beacon"]["fast_speed"] | 100;
+        conf.smart_beacon.min_tx_dist = data["smart_beacon"]["min_tx_dist"] | 100;
+        conf.smart_beacon.min_bcn     = data["smart_beacon"]["min_bcn"] | 5;
     }
 
     if (data.containsKey("lora"))
     {
-        conf.lora.frequencyRx         = data["lora"]["frequency_rx"].as<unsigned long>() | 433775000;
-        conf.lora.frequencyTx         = data["lora"]["frequency_tx"].as<unsigned long>() | 433775000;
-        conf.lora.power               = data["lora"]["power"].as<uint32_t>() | 20;
-        conf.lora.spreadingFactor     = data["lora"]["spreading_factor"].as<uint32_t>() | 12;
-        conf.lora.signalBandwidth     = data["lora"]["signal_bandwidth"].as<unsigned long>() | 125000;
-        conf.lora.codingRate4         = data["lora"]["coding_rate4"].as<uint32_t>() | 5;
+        conf.lora.frequencyRx         = data["lora"]["frequency_rx"] | 433775000;
+        conf.lora.frequencyTx         = data["lora"]["frequency_tx"] | 433775000;
+        conf.lora.power               = data["lora"]["power"] | 20;
+        conf.lora.spreadingFactor     = data["lora"]["spreading_factor"] | 12;
+        conf.lora.signalBandwidth     = data["lora"]["signal_bandwidth"] | 125000;
+        conf.lora.codingRate4         = data["lora"]["coding_rate4"] | 5;
     }
 
     if (data.containsKey("ptt_output"))
     {
-        conf.ptt.active               = data["ptt_output"]["active"].as<bool>() | false;
-        conf.ptt.io_pin               = data["ptt_output"]["io_pin"].as<uint8_t>() | 4;
-        conf.ptt.start_delay          = data["ptt_output"]["start_delay"].as<uint32_t>() | 0;
-        conf.ptt.end_delay            = data["ptt_output"]["end_delay"].as<uint32_t>() | 0;
-        conf.ptt.reverse              = data["ptt_output"]["reverse"].as<bool>() | false;
+        conf.ptt.active               = data["ptt_output"]["active"] | false;
+        conf.ptt.io_pin               = data["ptt_output"]["io_pin"] | 4;
+        conf.ptt.start_delay          = data["ptt_output"]["start_delay"] | 0;
+        conf.ptt.end_delay            = data["ptt_output"]["end_delay"] | 0;
+        conf.ptt.reverse              = data["ptt_output"]["reverse"] | false;
     }
 
     if (data.containsKey("location"))
     {
-        conf.location.latitude        = data["location"]["latitude"].as<double>();
-        conf.location.longitude       = data["location"]["longitude"].as<double>();
-        conf.location.altitude        = data["location"]["altitude"].as<uint32_t>();
+        // JSON to double looses precision, hence use sscanf()
+        if (toDouble(data["location"]["latitude"].as<String>(), &conf.location.latitude) == false)
+        {
+            conf.location.latitude  = data["location"]["latitude"];
+        }
+
+        // JSON to double looses precision, hence use sscanf()
+        if (toDouble(data["location"]["longitude"].as<String>(), &conf.location.longitude) == false)
+        {
+            conf.location.longitude = data["location"]["longitude"];
+        }
+        conf.location.altitude      = data["location"]["altitude"];
     }
 
     return conf;
@@ -140,9 +154,9 @@ void ConfigurationManagement::writeConfiguration(Configuration conf)
     data["display_timeout"]             = conf.display_timeout;
     data["beacon"]["message"]           = conf.beacon.message;
     data["beacon"]["timeout"]           = conf.beacon.timeout;
+    data["beacon"]["button_tx"]         = conf.beacon.button_tx;
     data["beacon"]["symbol"]            = conf.beacon.symbol;
     data["beacon"]["overlay"]           = conf.beacon.overlay;
-    data["beacon"]["button_tx"]         = conf.beacon.button_tx;
     data["smart_beacon"]["active"]      = conf.smart_beacon.active;
     data["smart_beacon"]["turn_min"]    = conf.smart_beacon.turn_min;
     data["smart_beacon"]["slow_rate"]   = conf.smart_beacon.slow_rate;
@@ -165,6 +179,82 @@ void ConfigurationManagement::writeConfiguration(Configuration conf)
     data["ptt_out"]["end_delay"]        = conf.ptt.end_delay;
     data["ptt_out"]["reverse"]          = conf.ptt.reverse;
 
+    data["location"]["latitude"]        = conf.location.latitude;
+    data["location"]["longitude"]       = conf.location.longitude;
+    data["location"]["altitude"]        = conf.location.altitude;
+
     serializeJson(data, file);
     file.close();
 }
+
+#if 0
+static void dprint(const String &n, const String &v)
+{
+    Serial.print(n); Serial.print(">s: ");
+    Serial.println(v);
+}
+static void dprint(const String &n, const bool &v)
+{
+    Serial.print(n); Serial.print(">b: ");
+    Serial.println(v);
+}
+static void dprint(const String &n, const double &v)
+{
+    Serial.print(n); Serial.print(">d: ");
+    Serial.println(v, 6);
+}
+static void dprint(const String &n, const uint32_t &v)
+{
+    Serial.print(n); Serial.print(">u32: ");
+    Serial.println(v);
+}
+static void dprint(const String &n, const uint8_t &v)
+{
+    Serial.print(n); Serial.print(">u8: ");
+    Serial.println(v);
+}
+static void dprint(const String &n, const unsigned long &v)
+{
+    Serial.print(n); Serial.print(">ul: ");
+    Serial.println(v);
+}
+
+void ConfigurationManagement::dump(const Configuration &conf)
+{
+    dprint("[callsign]", conf.callsign);
+
+    dprint("[debug]", conf.debug);
+    dprint("[enhance_precision]", conf.enhance_precision);
+    dprint("[display_timeout]", conf.display_timeout);
+
+    dprint("[beacon][message]", conf.beacon.message);
+    dprint("[beacon][timeout]", conf.beacon.timeout);
+
+    dprint("[beacon][symbol]", conf.beacon.symbol);
+    dprint("[beacon][overlay]", conf.beacon.overlay);
+    dprint("[beacon][button_tx]", conf.beacon.button_tx);
+
+    dprint("[smart_beacon][active]", conf.smart_beacon.active);
+    dprint("[smart_beacon][turn_min]", conf.smart_beacon.turn_min);
+    dprint("[smart_beacon][slow_rate]", conf.smart_beacon.slow_rate);
+    dprint("[smart_beacon][slow_speed]", conf.smart_beacon.slow_speed);
+    dprint("[smart_beacon][fast_rate]", conf.smart_beacon.fast_rate);
+    dprint("[smart_beacon][fast_speed]", conf.smart_beacon.fast_speed);
+    dprint("[smart_beacon][min_tx_dist]", conf.smart_beacon.min_tx_dist);
+    dprint("[smart_beacon][min_bcn]", conf.smart_beacon.min_bcn);
+    dprint("[lora][frequency_rx]", conf.lora.frequencyRx);
+    dprint("[lora][frequency_tx]", conf.lora.frequencyTx);
+    dprint("[lora][power]", conf.lora.power);
+    dprint("[lora][spreading_factor]", conf.lora.spreadingFactor);
+    dprint("[lora][signal_bandwidth]", conf.lora.signalBandwidth);
+    dprint("[lora][coding_rate4]", conf.lora.codingRate4);
+    dprint("[ptt_output][active]", conf.ptt.active);
+    dprint("[ptt_output][io_pin]", conf.ptt.io_pin);
+    dprint("[ptt_output][start_delay]", conf.ptt.start_delay);
+    dprint("[ptt_output][end_delay]", conf.ptt.end_delay);
+    dprint("[ptt_output][reverse]", conf.ptt.reverse);
+    dprint("[location][latitude]", conf.location.latitude);
+    dprint("[location][longitude]", conf.location.longitude);
+    dprint("[location][altitude]", conf.location.altitude);
+}
+#endif

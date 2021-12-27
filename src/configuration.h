@@ -137,6 +137,9 @@ class ConfigurationManagement
 
         Configuration readConfiguration();
         void          writeConfiguration(Configuration conf);
+#if 0
+        static void   dump(const Configuration &conf);
+#endif
 
     private:
         const String m_FilePath;

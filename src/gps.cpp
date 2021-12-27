@@ -206,7 +206,7 @@ bool GPSDevice::IsSleeping()
 
 bool GPSDevice::GetPVT()
 {
-    return (m_gnss.getPVT() && m_gnss.getHPPOSLLH() && (m_gnss.getInvalidLlh(0) == false));
+    return (m_gnss.getPVT() && (m_gnss.getInvalidLlh(0) == false));
 }
 
 bool GPSDevice::GetDateAndTime(struct tm &dt)
@@ -332,8 +332,9 @@ bool GPSDevice::setUBXMode()
         if (m_gnss.setUART1Output(COM_TYPE_UBX))
         {
             delay(2000);
-            if (m_gnss.setNavigationFrequency(1))
+            if (m_gnss.setNavigationFrequency(1) && m_gnss.setAutoPVT(true))
             {
+                m_gnss.flushPVT();
                 return true;
             }
         }
