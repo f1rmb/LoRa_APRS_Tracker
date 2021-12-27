@@ -368,7 +368,7 @@ void setup()
     DlogPrintlnI("LoRa APRS Tracker by OE5BPA (Peter Buchegger)");
     oled.Init();
 
-    oled.Display("OE5BPA", "LoRa APRS Tracker", "by Peter Buchegger", emptyString, "Mods: Daniel, F1RMB", "               v0.403");
+    oled.Display("OE5BPA", "LoRa APRS Tracker", "by Peter Buchegger", emptyString, "Mods: Daniel, F1RMB", "               v0.404");
 
     loadConfiguration();
     gpsInitialize();
