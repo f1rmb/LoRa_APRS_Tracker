@@ -369,7 +369,7 @@ void setup()
     DlogPrintlnI("LoRa APRS Tracker by OE5BPA (Peter Buchegger)");
     oled.Init();
 
-    oled.Display("OE5BPA", "LoRa APRS Tracker", "by Peter Buchegger", emptyString, "Mods: Daniel, F1RMB", "               v0.402");
+    oled.Display("OE5BPA", "LoRa APRS Tracker", "by Peter Buchegger", emptyString, "Mods: Daniel, F1RMB", "               v0.403");
 
     loadConfiguration();
     gpsInitialize();
@@ -762,8 +762,8 @@ void loop()
                 " GPS: " + (posIsValid ? "Sl" : "Ake"));
         Serial.println(String("Nxt Bcn: ") + (cfg.smart_beacon.active ? "~" : "") + formatToTimeString(gParams.nextBeaconTimeStamp) + " / " + formatToTimeString(n));
 #else
-        Serial.println(String("Sats: ") + (posIsValid ? String(gParams.lastValidGPS.satellites) : "-") + " HDOP: " + (posIsValid ? String(gParams.lastValidGPS.hdop) : "--.--"));
-        Serial.println(String("Nxt Bcn: ") + (posIsValid ? (cfg.smart_beacon.active ? "~" : "") + formatToTimeString(gParams.nextBeaconTimeStamp) : "--:--:--"));
+        //Serial.println(String("Sats: ") + (posIsValid ? String(gParams.lastValidGPS.satellites) : "-") + " HDOP: " + (posIsValid ? String(gParams.lastValidGPS.hdop) : "--.--"));
+        //Serial.println(String("Nxt Bcn: ") + (posIsValid ? (cfg.smart_beacon.active ? "~" : "") + formatToTimeString(gParams.nextBeaconTimeStamp) : "--:--:--"));
 
 #endif
 
@@ -807,14 +807,12 @@ void loop()
             {
                 gps.SetLowPower(true, SLEEP_TIME_MS);
                 gParams.gpsFixTime = 0;
-                Serial.println("Sleeping");
             }
             else if (gps.IsSleeping() && (gps.StillHasToSleep() == false))
             {
                 gps.SetLowPower(false, 0);
                 gParams.gpsFixTime = 0;
                 //gParams.gpsWakeupCount = 3; // wait 3 secs before expecting the GPS is fully operationnal
-                Serial.println("Awake");
             }
         }
     }
@@ -938,12 +936,13 @@ void loop()
                 gParams.awakenTimePeriod = 300; // 300ms
                 break;
 
+            case ESP_SLEEP_WAKEUP_GPIO:
+                gParams.ResetDisplayTimeout(); // fallthrough
             default:
             {
                 gParams.awakenTimePeriod = ((cfg.display_timeout > 0) ? cfg.display_timeout : 2000);
             }
             break;
-
         }
     }
 }
