@@ -224,7 +224,7 @@ bool GPSDevice::IsSleeping()
 
 bool GPSDevice::GetPVT()
 {
-    return (m_gnss.getPVT(2000U) && (m_gnss.getInvalidLlh(2000U) == false));
+    return (m_gnss.getPVT() && (m_gnss.getInvalidLlh() == false));
 }
 
 bool GPSDevice::GetDateAndTime(struct tm &dt)
@@ -344,13 +344,13 @@ bool GPSDevice::setUBXMode()
     if (m_serialGPS && m_isConnected)
     {
         m_lowPowerModeEnabled = false;
-        m_gnss.powerSaveMode(false, 2000U);
+        m_gnss.powerSaveMode(false);
 
         // Configure the U-Blox
         if (m_gnss.setUART1Output(COM_TYPE_UBX))
         {
             delay(2000);
-            if (m_gnss.setNavigationFrequency(1, 2000U) && m_gnss.setAutoPVT(true, uint16_t(2000)))
+            if (m_gnss.setNavigationFrequency(1) && m_gnss.setAutoPVT(true))
             {
                 m_gnss.flushPVT();
                 return true;

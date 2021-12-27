@@ -6,7 +6,6 @@
 #include <WiFi.h>
 
 #include <thread>
-#include <chrono>
 
 #include "dummylogger.h"
 #include "configuration.h"
@@ -216,7 +215,7 @@ static void loadConfiguration()
         oled.Display("ERROR", "You have to change your settings in 'data/tracker.json' and "
                 "upload it via \"Upload File System image\"!");
 
-        while (true) {}
+        while (true) { delay(10); }
     }
 }
 
@@ -231,7 +230,7 @@ static void gpsInitialize()
         delay(5000);
         ESP.restart(); // Reboot
 #endif
-        while (true) { }
+        while (true) { delay(10); }
     }
     else
     {
@@ -259,7 +258,7 @@ static void loraInit()
         DlogPrintlnE("Starting LoRa failed!");
         oled.Display("ERROR", emptyString, "Starting LoRa failed!");
 
-        while (true) {}
+        while (true) { delay(10); }
     }
 
     LoRa.setSpreadingFactor(cfg.lora.spreadingFactor);
@@ -326,7 +325,7 @@ static void buttonThread()
 {
     while (true)
     {
-        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        delay(10);
 
         if (gParams.hasStarted)
         {
@@ -383,7 +382,7 @@ void setup()
 
     gParams.SetDisplayTimeout(cfg.display_timeout);
 
-    // make sure wifi and bt is off as we don't need it:
+    // make sure wifi and bt are off as we don't need it:
     WiFi.mode(WIFI_OFF);
     btStop();
 
@@ -500,8 +499,8 @@ void loop()
                 gParams.lastValidGPS.longitude = currentLong     = gps.GetLongitude();
                 gParams.lastValidGPS.hdop                        = gps.GetHDOP();
                 gParams.lastValidGPS.satellites                  = gps.GetSatellites();
-                currentHeading                                   = gps.GetHeading();
                 gParams.lastValidGPS.altitude = currentAltInFeet = gps.GetAltitudeFT();
+                currentHeading                                   = gps.GetHeading();
                 currentSpeedKnot                                 = gps.GetSpeedKT();
 
             }
@@ -509,8 +508,8 @@ void loop()
             {
                 currentLat       = gParams.lastValidGPS.latitude;
                 currentLong      = gParams.lastValidGPS.longitude;
-                currentHeading   = gParams.previousHeading;
                 currentAltInFeet = double(gParams.lastValidGPS.altitude);
+                currentHeading   = gParams.previousHeading;
                 currentSpeedKnot = 0.0;
             }
 
@@ -888,7 +887,7 @@ void loop()
                         oled.Display("LOCATION", emptyString, "Using GPS");
 #ifdef TTGO_T_Beam_V1_0
                         pm.GPSActivate();
-                        delay(2000);
+                        delay(1000);
                         gpsInitialize();
 #endif
                         gParams.lastValidGPS.Reset();
