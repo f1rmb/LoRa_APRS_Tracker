@@ -359,7 +359,7 @@ void setup()
 
     oled.Init(cfg.display.invert, cfg.display.rotation);
 
-    oled.Display("OE5BPA", "LoRa APRS Tracker", "by Peter Buchegger", emptyString, "Mods: Daniel, F1RMB", "               v0.406", 2000);
+    oled.Display("OE5BPA", "LoRa APRS Tracker", "by Peter Buchegger", emptyString, "Mods: Daniel, F1RMB", "               v0.407", 2000);
 
     // Check the callsign setting validity
     if (cfg.callsign.startsWith("NOCALL"))
