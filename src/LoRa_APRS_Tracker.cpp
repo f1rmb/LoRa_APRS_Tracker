@@ -589,8 +589,10 @@ void loop()
 
             if (gParams.batteryIsConnected)
             {
+                int32_t mA = int32_t(pm.getBatteryChargeDischargeCurrent());
+
                 gParams.batteryVoltage       = String(pm.getBatteryVoltage(), 2);
-                gParams.batteryChargeCurrent = String(pm.getBatteryChargeDischargeCurrent(), 0);
+                gParams.batteryChargeCurrent = String(mA);
             }
         }
 #endif
