@@ -211,25 +211,25 @@ static void gpsInitialize()
 {
     uint8_t versions[2];
 
-    oled.Display("GPS INIT", emptyString, "Initialize...", 10);
+    oled.Display(" GPS INIT", emptyString, "Initialize...", 10);
 
     if (gps.Initialize(ss) == false)
     {
         DlogPrintlnE("GPS Init Failed!");
 #ifdef TTGO_T_Beam_V1_0 // Power cycle the GPS module
-        oled.Display("GPS INIT", emptyString, "Initialization Failed",  "   Power cycling &", "     rebooting...");
+        oled.Display(" GPS INIT", emptyString, "Initialization Failed",  "   Power cycling &", "     rebooting...");
         pm.GPSDeactivate();
         delay(5000);
         ESP.restart(); // Reboot
 #else
-        oled.Display("GPS INIT", emptyString, "Initialization Failed", " Please power cycle. ");
+        oled.Display(" GPS INIT", emptyString, "Initialization Failed", " Please power cycle. ");
         while (true) { delay(10); }
 #endif
     }
 
     if (gps.GetProtocolVersion(versions[0], versions[1]))
     {
-        oled.Display("GPS INIT", emptyString, "Initialization OK", emptyString, "Prot. Ver.: " + String(versions[0]) + "." + String(versions[1]), 2000);
+        oled.Display(" GPS INIT", emptyString, "Initialization OK", emptyString, "Prot. Ver.: " + String(versions[0]) + "." + String(versions[1]), 2000);
     }
 }
 
@@ -240,12 +240,12 @@ static void loraInitialize()
 
     long freq = cfg.lora.frequencyTx;
 
-    oled.Display("LoRa INIT", emptyString, "Initialize...", "Freq: " + String(freq) + "Hz", 2000);
+    oled.Display(" LoRa INIT", emptyString, "Initialize...", "Freq: " + String(freq) + "Hz", 2000);
 
     if (LoRa.begin(freq) == false)
     {
         DlogPrintlnE("LoRa Init Failed!");
-        oled.Display("LoRa INIT", emptyString, "Initialization Failed", " Please power cycle. ");
+        oled.Display(" LoRa INIT", emptyString, "Initialization Failed", " Please power cycle. ");
 
         while (true) { delay(10); }
     }
@@ -258,7 +258,7 @@ static void loraInitialize()
     LoRa.setTxPower(cfg.lora.power);
     LoRa.sleep();
 
-    oled.Display("LoRa INIT", emptyString, "Initialization OK", 2000);
+    oled.Display(" LoRa INIT", emptyString, "Initialization OK", 2000);
 }
 
 // WARNING: don't use this one in *printf()
@@ -359,14 +359,17 @@ void setup()
 
     oled.Init(cfg.display.invert, cfg.display.rotation);
 
-    oled.Display("OE5BPA", "LoRa APRS Tracker", "by Peter Buchegger", emptyString, "Mods: Daniel, F1RMB", "               v0.407", 2000);
-
+#if defined(USE_BOOTSCREEN)
+    oled.ShowBootscreen(4000);
+#else
+    oled.Display("  OE5BPA", "  LoRa APRS Tracker", " by  Peter Buchegger", emptyString, " Mods: Daniel, F1RMB", "               v0.407", 2000);
+#endif
     // Check the callsign setting validity
     if (cfg.callsign.startsWith("NOCALL"))
     {
         DlogPrintlnE("You have to change your settings in 'data/tracker.json' and "
                 "upload it via \"Upload File System image\"!");
-        oled.Display("ERROR", "You have to change your settings in 'data/tracker.json' and "
+        oled.Display("  ERROR!", "You have to change your settings in 'data/tracker.json' and "
                 "upload it via \"Upload File System image\"!");
 
         while (true) { delay(10); }
@@ -393,7 +396,7 @@ void setup()
     userBtn.attachMultiClick(buttonMultiPressCallback);
 
     DlogPrintlnI("Smart Beacon is " + getOnOff(cfg.smart_beacon.active));
-    oled.Display("INFO", emptyString, "Smart Beacon is " + getOnOff(cfg.smart_beacon.active), 1000);
+    oled.Display("   INFO", emptyString, "Smart Beacon is " + getOnOff(cfg.smart_beacon.active), 1000);
     DlogPrintlnI("setup done...");
 
 #if 0
@@ -418,7 +421,7 @@ void setup()
     }
 #endif
 
-    oled.Display("INFO", emptyString, "Running...");
+    oled.Display("   INFO", emptyString, "Running...");
 
     gParams.ResetDisplayTimeout(); // Enable OLED timeout
     gParams.hasStarted = true; // main loop will start, unlock the userButton thread
@@ -698,7 +701,7 @@ void loop()
             String data(msgStr.encode());
             DlogPrintlnD(data);
 
-            oled.Display("<< TX >>", emptyString, data);
+            oled.Display(" << TX >>", emptyString, data);
 
             if (cfg.ptt.active)
             {
@@ -840,19 +843,17 @@ void loop()
                     break;
 
                 case GlobalParameters::BUTTON_CLICKED_TWICE:
-                    //oled.Display("DOUBLE", 500);
                     if (cfg.display_timeout > 0)
                     {
                         uint32_t dispTo = ((gParams.GetDisplayTimeout() == cfg.display_timeout) ? 0 : cfg.display_timeout);
 
                         gParams.ResetDisplayTimeout();
-                        oled.Display("SCREEN", emptyString, "Timeout: " + ((dispTo > 0) ? String(dispTo) + "ms" : "disabled"), 2000);
+                        oled.Display("  SCREEN", emptyString, "Timeout: " + ((dispTo > 0) ? String(dispTo) + "ms" : "disabled"), 2000);
                         gParams.SetDisplayTimeout(dispTo);
                     }
                     break;
 
                 case GlobalParameters::BUTTON_CLICKED_MULTI:
-                    //oled.Display("MULTI", 500);
                     if (gParams.locationFromGPS)
                     {
                         bool gpsLocationIsValid = gParams.lastValidGPS.PositionIsValid();
@@ -866,7 +867,7 @@ void loop()
                             gParams.lastValidGPS.satellites = 0;
                         }
 
-                        oled.Display("LOCATION", emptyString, "Fixed",
+                        oled.Display(" LOCATION", emptyString, "-- Fixed Position --",
                                 String("Lat:  ") + String(gParams.lastValidGPS.latitude, 6),
                                 String("Long: ") + String(gParams.lastValidGPS.longitude, 6),
                                 String("Alt:  ") + String(int(gParams.lastValidGPS.altitude / 3.2808399)) + "m");
@@ -877,7 +878,7 @@ void loop()
                     }
                     else
                     {
-                        oled.Display("LOCATION", emptyString, "Using GPS");
+                        oled.Display(" LOCATION", emptyString, "   -- Using GPS --");
 #ifdef TTGO_T_Beam_V1_0
                         pm.GPSActivate();
                         delay(5000);

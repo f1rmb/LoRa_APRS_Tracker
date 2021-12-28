@@ -7,6 +7,7 @@
 
 #include <Arduino.h>
 
+#define USE_BOOTSCREEN
 
 class OLEDDisplay
 {
@@ -15,6 +16,10 @@ class OLEDDisplay
         ~OLEDDisplay();
 
         void Init(bool invert, uint8_t rotation);
+
+#if defined(USE_BOOTSCREEN)
+        void ShowBootscreen(uint32_t msPause = 0);
+#endif
 
         void Display(const String &header, uint32_t msPause = 0);
         void Display(const String &header, const String &line1, uint32_t msPause = 0);
