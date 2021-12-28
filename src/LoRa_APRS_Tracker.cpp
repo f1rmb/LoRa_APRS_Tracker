@@ -211,12 +211,13 @@ static void gpsInitialize()
 {
     if (gps.Initialize(ss) == false)
     {
-        oled.Display("GPS INIT", emptyString, "Initialization Failed");
-
 #ifdef TTGO_T_Beam_V1_0 // Power cycle the GPS module
+        oled.Display("GPS INIT", emptyString, "Initialization Failed",  "   Power cycling &", "     rebooting...");
         pm.GPSDeactivate();
         delay(5000);
         ESP.restart(); // Reboot
+#else
+        oled.Display("GPS INIT", emptyString, "Initialization Failed",  " Please power cycle. ");
 #endif
         while (true) { delay(10); }
     }
@@ -231,7 +232,7 @@ static void gpsInitialize()
     }
 }
 
-static void loraInit()
+static void loraInitialize()
 {
     DlogPrintlnI("Set SPI pins!");
     SPI.begin(LORA_SCK, LORA_MISO, LORA_MOSI, LORA_CS);
@@ -359,7 +360,7 @@ void setup()
 
     oled.Init(cfg.display.invert, cfg.display.rotation);
 
-    oled.Display("OE5BPA", "LoRa APRS Tracker", "by Peter Buchegger", emptyString, "Mods: Daniel, F1RMB", "               v0.405");
+    oled.Display("OE5BPA", "LoRa APRS Tracker", "by Peter Buchegger", emptyString, "Mods: Daniel, F1RMB", "               v0.406");
 
     // Check the callsign setting validity
     if (cfg.callsign.startsWith("NOCALL"))
@@ -373,7 +374,7 @@ void setup()
     }
 
     gpsInitialize();
-    loraInit();
+    loraInitialize();
 
     if (cfg.ptt.active)
     {
