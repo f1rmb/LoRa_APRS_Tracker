@@ -18,7 +18,7 @@ class OLEDDisplay
         void Init(bool invert, uint8_t rotation);
 
 #if defined(USE_BOOTSCREEN)
-        void ShowBootscreen(uint32_t msPause = 0);
+        void ShowBootscreen(const String &version, uint16_t x, uint16_t y, uint16_t textcolor, uint32_t msPause = 0);
 #endif
 
         void Display(const String &header, uint32_t msPause = 0);

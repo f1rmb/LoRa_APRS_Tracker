@@ -16,6 +16,8 @@
 #include "Deg2DDMMMM.h"
 
 
+#define PROGRAM_VERSION  "0.50"
+
 // Function prototype
 static void buttonThread();
 
@@ -360,7 +362,7 @@ void setup()
     oled.Init(cfg.display.invert, cfg.display.rotation);
 
 #if defined(USE_BOOTSCREEN)
-    oled.ShowBootscreen(4000);
+    oled.ShowBootscreen("v" + String(PROGRAM_VERSION), 98, 56, BLACK, 4000);
 #else
     oled.Display("  OE5BPA", "  LoRa APRS Tracker", " by  Peter Buchegger", emptyString, " Mods: Daniel, F1RMB", "               v0.407", 2000);
 #endif
@@ -711,8 +713,6 @@ void loop()
 
             if (LoRa.beginPacket() != 0) // Ensure the LoRa module is not transmiting
             {
-                //LoRa.idle();
-
                 // Header:
                 LoRa.write('<');
                 LoRa.write(0xFF);
@@ -720,8 +720,6 @@ void loop()
                 // APRS Data:
                 LoRa.write((const uint8_t *)data.c_str(), data.length());
                 LoRa.endPacket(); // Send SYNC
-
-                //LoRa.sleep();
 
 #if 0
                 Serial.print("TX ==> '");
