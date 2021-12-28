@@ -209,43 +209,43 @@ static void loadConfiguration()
 
 static void gpsInitialize()
 {
+    uint8_t versions[2];
+
+    oled.Display("GPS INIT", emptyString, "Initialize...");
+
     if (gps.Initialize(ss) == false)
     {
+        DlogPrintlnE("GPS Init Failed!");
 #ifdef TTGO_T_Beam_V1_0 // Power cycle the GPS module
         oled.Display("GPS INIT", emptyString, "Initialization Failed",  "   Power cycling &", "     rebooting...");
         pm.GPSDeactivate();
         delay(5000);
         ESP.restart(); // Reboot
 #else
-        oled.Display("GPS INIT", emptyString, "Initialization Failed",  " Please power cycle. ");
-#endif
+        oled.Display("GPS INIT", emptyString, "Initialization Failed", " Please power cycle. ");
         while (true) { delay(10); }
+#endif
     }
-    else
-    {
-        uint8_t versions[2];
 
-        if (gps.GetProtocolVersion(versions[0], versions[1]))
-        {
-            oled.Display("GPS INIT", emptyString, "Initialization OK", emptyString, "Prot. Ver.: " + String(versions[0]) + "." + String(versions[1]), 5000);
-        }
+    if (gps.GetProtocolVersion(versions[0], versions[1]))
+    {
+        oled.Display("GPS INIT", emptyString, "Initialization OK", emptyString, "Prot. Ver.: " + String(versions[0]) + "." + String(versions[1]), 2000);
     }
 }
 
 static void loraInitialize()
 {
-    DlogPrintlnI("Set SPI pins!");
     SPI.begin(LORA_SCK, LORA_MISO, LORA_MOSI, LORA_CS);
-    DlogPrintlnI("Set LoRa pins!");
     LoRa.setPins(LORA_CS, LORA_RST, LORA_IRQ);
 
     long freq = cfg.lora.frequencyTx;
-    DlogPrintlnI("frequency: " + String(freq));
+
+    oled.Display("LoRa INIT", emptyString, "Initialize...", "Freq: " + String(freq) + "Hz", 2000);
 
     if (LoRa.begin(freq) == false)
     {
-        DlogPrintlnE("Starting LoRa failed!");
-        oled.Display("ERROR", emptyString, "Starting LoRa failed!");
+        DlogPrintlnE("LoRa Init Failed!");
+        oled.Display("LoRa INIT", emptyString, "Initialization Failed", " Please power cycle. ");
 
         while (true) { delay(10); }
     }
@@ -258,8 +258,7 @@ static void loraInitialize()
     LoRa.setTxPower(cfg.lora.power);
     LoRa.sleep();
 
-    DlogPrintlnI("LoRa init done!");
-    oled.Display("INFO", emptyString, "LoRa init done!", 2000);
+    oled.Display("LoRa INIT", emptyString, "Initialization OK", 2000);
 }
 
 // WARNING: don't use this one in *printf()
@@ -360,7 +359,7 @@ void setup()
 
     oled.Init(cfg.display.invert, cfg.display.rotation);
 
-    oled.Display("OE5BPA", "LoRa APRS Tracker", "by Peter Buchegger", emptyString, "Mods: Daniel, F1RMB", "               v0.406");
+    oled.Display("OE5BPA", "LoRa APRS Tracker", "by Peter Buchegger", emptyString, "Mods: Daniel, F1RMB", "               v0.406", 2000);
 
     // Check the callsign setting validity
     if (cfg.callsign.startsWith("NOCALL"))
