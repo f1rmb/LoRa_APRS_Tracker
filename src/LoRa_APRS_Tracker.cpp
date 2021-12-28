@@ -211,7 +211,7 @@ static void gpsInitialize()
 {
     uint8_t versions[2];
 
-    oled.Display("GPS INIT", emptyString, "Initialize...");
+    oled.Display("GPS INIT", emptyString, "Initialize...", 10);
 
     if (gps.Initialize(ss) == false)
     {
@@ -880,7 +880,7 @@ void loop()
                         oled.Display("LOCATION", emptyString, "Using GPS");
 #ifdef TTGO_T_Beam_V1_0
                         pm.GPSActivate();
-                        delay(1000);
+                        delay(2000);
                         gpsInitialize();
 #endif
                         gParams.lastValidGPS.Reset();
