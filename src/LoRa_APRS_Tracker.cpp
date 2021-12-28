@@ -706,7 +706,7 @@ void loop()
 
             if (LoRa.beginPacket() != 0) // Ensure the LoRa module is not transmiting
             {
-                LoRa.idle();
+                //LoRa.idle();
 
                 // Header:
                 LoRa.write('<');
@@ -716,7 +716,7 @@ void loop()
                 LoRa.write((const uint8_t *)data.c_str(), data.length());
                 LoRa.endPacket(); // Send SYNC
 
-                LoRa.sleep();
+                //LoRa.sleep();
 
 #if 0
                 Serial.print("TX ==> '");
