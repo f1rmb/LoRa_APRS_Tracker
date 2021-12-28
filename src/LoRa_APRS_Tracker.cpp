@@ -95,8 +95,7 @@ struct GlobalParameters
             gpsFixTime(0),
             lightSleepExitTime(0),
             awakenTimePeriod(0),
-            ///btnInterrupts(0),
-            btnClicks(BUTTON_CLICKED_NONE),
+            btnClicks(GlobalParameters::BUTTON_CLICKED_NONE),
             locationFromGPS(true),
 #ifdef TTGO_T_Beam_V1_0
             batteryLastCheckTime(0),
@@ -169,7 +168,6 @@ struct GlobalParameters
         unsigned long  gpsFixTime;
         unsigned long  lightSleepExitTime;
         unsigned long  awakenTimePeriod;
-        ///volatile int   btnInterrupts;
         BUTTON_CLICKED btnClicks;
         bool           locationFromGPS;
 #ifdef TTGO_T_Beam_V1_0
@@ -207,16 +205,6 @@ static void loadConfiguration()
 {
     ConfigurationManagement confmg("/tracker.json");
     cfg = confmg.readConfiguration();
-
-    if (cfg.callsign.startsWith("NOCALL"))
-    {
-        DlogPrintlnE("You have to change your settings in 'data/tracker.json' and "
-                "upload it via \"Upload File System image\"!");
-        oled.Display("ERROR", "You have to change your settings in 'data/tracker.json' and "
-                "upload it via \"Upload File System image\"!");
-
-        while (true) { delay(10); }
-    }
 }
 
 static void gpsInitialize()
@@ -366,11 +354,24 @@ void setup()
 
     delay(500);
     DlogPrintlnI("LoRa APRS Tracker by OE5BPA (Peter Buchegger)");
-    oled.Init();
-
-    oled.Display("OE5BPA", "LoRa APRS Tracker", "by Peter Buchegger", emptyString, "Mods: Daniel, F1RMB", "               v0.404");
 
     loadConfiguration();
+
+    oled.Init(cfg.display.invert, cfg.display.rotation);
+
+    oled.Display("OE5BPA", "LoRa APRS Tracker", "by Peter Buchegger", emptyString, "Mods: Daniel, F1RMB", "               v0.405");
+
+    // Check the callsign setting validity
+    if (cfg.callsign.startsWith("NOCALL"))
+    {
+        DlogPrintlnE("You have to change your settings in 'data/tracker.json' and "
+                "upload it via \"Upload File System image\"!");
+        oled.Display("ERROR", "You have to change your settings in 'data/tracker.json' and "
+                "upload it via \"Upload File System image\"!");
+
+        while (true) { delay(10); }
+    }
+
     gpsInitialize();
     loraInit();
 
@@ -390,7 +391,6 @@ void setup()
     userBtn.attachClick(buttonClickCallback);
     userBtn.attachDoubleClick(buttonDoubleClickCallback);
     userBtn.attachMultiClick(buttonMultiPressCallback);
-    ///attachInterrupt(BUTTON_PIN, [] { gParams.btnInterrupts++; }, FALLING);
 
     DlogPrintlnI("Smart Beacon is " + getOnOff(cfg.smart_beacon.active));
     oled.Display("INFO", emptyString, "Smart Beacon is " + getOnOff(cfg.smart_beacon.active), 1000);
@@ -749,7 +749,7 @@ void loop()
         bool posIsValid = gParams.lastValidGPS.PositionIsValid();
         oled.Display(cfg.callsign,
                 formatToDateString(n) + " " + formatToTimeString(n),
-                String("Sats: ") + (posIsValid ? String(gParams.lastValidGPS.satellites) : "-") + " HDOP: " + (posIsValid ? String(gParams.lastValidGPS.hdop) : "--.--"),
+                String("Sats: ") + (posIsValid ? (gParams.locationFromGPS ? String(gParams.lastValidGPS.satellites) : "F" ) : "-") + " HDOP: " + (posIsValid ? String(gParams.lastValidGPS.hdop) : "--.--"),
                 String("Nxt Bcn: ") + (posIsValid ? (cfg.smart_beacon.active ? "~" : "") + formatToTimeString(gParams.nextBeaconTimeStamp) : "--:--:--"),
                 (gParams.batteryIsConnected ? (String("Bat: ") + gParams.batteryVoltage + "V, " + gParams.batteryChargeCurrent + "mA") : "Powered via USB"),
                 String("Smart Beacon: " + getOnOff(cfg.smart_beacon.active)));
@@ -815,15 +815,6 @@ void loop()
             }
         }
     }
-
-//    if (gParams.btnInterrupts > 0)
-//    {
-//        if (cfg.display_timeout > 0)
-//        {
-//            //gParams.ResetDisplayTimeout();
-//        }
-//        gParams.btnInterrupts = 0;
-//    }
 
     // User button has been clicked
     if (gParams.btnClicks != GlobalParameters::BUTTON_CLICKED_NONE)
@@ -903,9 +894,8 @@ void loop()
         gParams.btnClicks = GlobalParameters::BUTTON_CLICKED_NONE;
     }
 
-
     // ESP32 Light Sleep
-    if ((userBtn.isIdle() /*&& (gParams.btnInterrupts == 0)*/) && // User button is released, no button interrupt pending
+    if (userBtn.isIdle() && // User button is released, no button interrupt pending
             ((gParams.GetDisplayTimeout() == 0) || (oled.IsActivated() == false)) && // Screen is OFF (if timeout is set)
             ((gParams.lightSleepExitTime == 0) || ((millis() - gParams.lightSleepExitTime) > gParams.awakenTimePeriod))) // Wait 5s after awaken from the button before going to sleep.
     {
@@ -937,7 +927,7 @@ void loop()
                 break;
 
             case ESP_SLEEP_WAKEUP_GPIO:
-                gParams.ResetDisplayTimeout(); // fallthrough
+                //gParams.ResetDisplayTimeout(); // fallthrough
             default:
             {
                 gParams.awakenTimePeriod = ((cfg.display_timeout > 0) ? cfg.display_timeout : 2000);

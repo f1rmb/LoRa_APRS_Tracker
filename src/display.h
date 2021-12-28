@@ -14,7 +14,7 @@ class OLEDDisplay
         OLEDDisplay();
         ~OLEDDisplay();
 
-        void Init();
+        void Init(bool invert, uint8_t rotation);
 
         void Display(const String &header, uint32_t msPause = 0);
         void Display(const String &header, const String &line1, uint32_t msPause = 0);

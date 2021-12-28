@@ -114,6 +114,21 @@ class Configuration
                 String   overlay;
         };
 
+        class Display
+        {
+            public:
+                Display() :
+                    invert(false),
+                    rotation(0) // 0 .. 3
+                {
+
+                }
+
+                bool invert;
+                uint8_t rotation;
+
+        };
+
         Configuration() :
             callsign("NOCALL-10"),
             debug(false),
@@ -132,6 +147,7 @@ class Configuration
         LoRa         lora;
         PTT          ptt;
         Location     location;
+        Display      display;
 };
 
 class ConfigurationManagement

@@ -46,5 +46,10 @@
 		"altitude":0,
 		"symbol": "i",
 		"overlay": "/"
+	},
+	"display":
+	{
+		"invert":false,
+		"rotation":0
 	}
 }

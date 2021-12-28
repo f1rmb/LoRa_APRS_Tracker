@@ -142,6 +142,12 @@ Configuration ConfigurationManagement::readConfiguration()
         }
     }
 
+    if (data.containsKey("display"))
+    {
+        conf.display.invert             = data["display"]["invert"] | false;
+        conf.display.rotation           = data["display"]["rotation"] | 0;
+    }
+
     return conf;
 }
 
@@ -194,6 +200,9 @@ void ConfigurationManagement::writeConfiguration(Configuration conf)
     data["location"]["altitude"]        = conf.location.altitude;
     data["location"]["symbol"]          = conf.location.symbol;
     data["location"]["overlay"]         = conf.location.overlay;
+
+    data["display"]["invert"]           = conf.display.invert;
+    data["display"]["rotation"]         = conf.display.rotation;
 
     serializeJson(data, file);
     file.close();

@@ -25,7 +25,7 @@ OLEDDisplay::~OLEDDisplay()
 }
 
 // cppcheck-suppress unusedFunction
-void OLEDDisplay::Init()
+void OLEDDisplay::Init(bool invert, uint8_t rotation)
 {
     pinMode(OLED_RST, OUTPUT);
     digitalWrite(OLED_RST, LOW);
@@ -39,6 +39,8 @@ void OLEDDisplay::Init()
         while (true) { }
     }
 
+    m_display.invertDisplay(invert);
+    m_display.setRotation(rotation);
     m_display.clearDisplay();
     m_display.setTextColor(WHITE);
     m_display.setTextSize(1);

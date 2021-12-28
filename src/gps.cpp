@@ -178,7 +178,12 @@ unsigned long GPSDevice::GetRemainingSleepTime()
 {
     if (m_lowPowerModeEnabled)
     {
-        return (m_sleepMS - (millis() - m_lastSleepTime));
+        unsigned long elapsed = (millis() - m_lastSleepTime);
+
+        if (elapsed < m_sleepMS)
+        {
+            return (m_sleepMS - elapsed);
+        }
     }
 
     return 0UL;
@@ -296,7 +301,7 @@ uint8_t GPSDevice::GetSatellites()
 
 double GPSDevice::GetHDOP()
 {
-    return (m_gnss.getHorizontalDOP() * 1e-2);
+    return ((std::min(uint16_t(9999), (m_gnss.getHorizontalDOP()))) * 1e-2); // Avoid crazy value
 }
 
 // Took from TinyGPSPlus
