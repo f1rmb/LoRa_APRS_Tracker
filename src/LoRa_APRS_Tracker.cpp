@@ -880,7 +880,7 @@ void loop()
                         oled.Display("LOCATION", emptyString, "Using GPS");
 #ifdef TTGO_T_Beam_V1_0
                         pm.GPSActivate();
-                        delay(2000);
+                        delay(5000);
                         gpsInitialize();
 #endif
                         gParams.lastValidGPS.Reset();
@@ -891,6 +891,8 @@ void loop()
                 default:
                     break;
             }
+
+            gParams.ResetDisplayTimeout();
         }
 
         gParams.btnClicks = GlobalParameters::BUTTON_CLICKED_NONE;
