@@ -56,7 +56,7 @@ class Deg2DDMMMM
 #endif
         }
 
-        static char *Format(char *dest, const Deg2DDMMMMPosition &p, bool isLongitude = false)
+        static char *Format(char *dest, const Deg2DDMMMMPosition &p, bool isLongitude)
         {
             sprintf(dest, "%.*u%05.2f%c", (isLongitude ? 3 : 2), p.degrees, (p.hundredths * 1e-2), (isLongitude ? (p.negative ? 'W' : 'E') : (p.negative ? 'S' : 'N')));
             return dest;

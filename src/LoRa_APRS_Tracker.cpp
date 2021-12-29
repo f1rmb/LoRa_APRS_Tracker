@@ -16,7 +16,7 @@
 #include "Deg2DDMMMM.h"
 
 
-#define PROGRAM_VERSION  "0.50"
+#define PROGRAM_VERSION  "0.51"
 
 // Function prototype
 static void buttonThread();
@@ -620,8 +620,8 @@ void loop()
             Deg2DDMMMM::Convert(pLat, currentLat, cfg.enhance_precision);
             Deg2DDMMMM::Convert(pLong, currentLong, cfg.enhance_precision);
 
-            String             latStr(Deg2DDMMMM::Format(latBuf, pLat));
-            String             longStr(Deg2DDMMMM::Format(longBuf, pLong));
+            String             latStr(Deg2DDMMMM::Format(latBuf, pLat, false));
+            String             longStr(Deg2DDMMMM::Format(longBuf, pLong, true));
             String             daoStr;
 
             if (cfg.enhance_precision)
