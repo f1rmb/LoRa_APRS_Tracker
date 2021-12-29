@@ -168,7 +168,7 @@ void setup()
     logPrintlnI("LoRa APRS Tracker by OE5BPA (Peter Buchegger)");
     oled.Init();
 
-    oled.Display("OE5BPA", "LoRa APRS Tracker", "by Peter Buchegger", emptyString, emptyString, "Mods: F1RMB - v0.100");
+    oled.Display("OE5BPA", "LoRa APRS Tracker", "by Peter Buchegger", emptyString, emptyString, "Mods: F1RMB - v0.101");
 
     loadConfiguration();
     gpsConfiguration();
@@ -404,7 +404,7 @@ void loop()
             aprsmsg += " -  _Bat.: " + gParams.batteryVoltage + "V - Cur.: " + gParams.batteryChargeCurrent + "mA";
         }
 
-        if (cfg.enhance_precision)
+        if (cfg.enhance_precision && (dao.length() > 0))
         {
             aprsmsg += " " + dao;
         }
@@ -656,15 +656,13 @@ static void gpsReset()
     } while (state < 4);
 }
 
-static char *s_min_nn(uint32_t min_nnnnn, int high_precision)
+static char *s_min_nn(char *buf, uint32_t min_nnnnn, int high_precision)
 {
     /* min_nnnnn: RawDegrees billionths is uint32_t by definition and is n'telth
      * degree (-> *= 6 -> nn.mmmmmm minutes) high_precision: 0: round at decimal
      * position 2. 1: round at decimal position 4. 2: return decimal position 3-4
      * as base91 encoded char
      */
-    static char buf[6];
-
     min_nnnnn = min_nnnnn * 0.006;
 
     if (high_precision)
@@ -702,6 +700,7 @@ static char *s_min_nn(uint32_t min_nnnnn, int high_precision)
 static String createLatAPRS(RawDegrees lat)
 {
     char str[20];
+    char buf[32];
     char n_s = 'N';
 
     if (lat.negative)
@@ -712,7 +711,7 @@ static String createLatAPRS(RawDegrees lat)
     // we like sprintf's float up-rounding.
     // but sprintf % may round to 60.00 -> 5360.00 (53° 60min is a wrong notation
     // ;)
-    sprintf(str, "%02d%s%c", lat.deg, s_min_nn(lat.billionths, 0), n_s);
+    sprintf(str, "%02d%s%c", lat.deg, s_min_nn(buf, lat.billionths, 0), n_s);
     return String(str);
 }
 
@@ -720,6 +719,7 @@ static String createLatAPRSDAO(RawDegrees lat)
 {
     // round to 4 digits and cut the last 2
     char str[20];
+    char buf[32];
     char n_s = 'N';
 
     if (lat.negative)
@@ -730,13 +730,14 @@ static String createLatAPRSDAO(RawDegrees lat)
     // we need sprintf's float up-rounding. Must be the same principle as in
     // aprs_dao(). We cut off the string to two decimals afterwards. but sprintf %
     // may round to 60.0000 -> 5360.0000 (53° 60min is a wrong notation ;)
-    sprintf(str, "%02d%s%c", lat.deg, s_min_nn(lat.billionths, 1 /* high precision */), n_s);
+    sprintf(str, "%02d%s%c", lat.deg, s_min_nn(buf, lat.billionths, 1 /* high precision */), n_s);
     return String(str);
 }
 
 static String createLongAPRS(RawDegrees lng)
 {
     char str[20];
+    char buf[32];
     char e_w = 'E';
 
     if (lng.negative)
@@ -744,7 +745,7 @@ static String createLongAPRS(RawDegrees lng)
         e_w = 'W';
     }
 
-    sprintf(str, "%03d%s%c", lng.deg, s_min_nn(lng.billionths, 0), e_w);
+    sprintf(str, "%03d%s%c", lng.deg, s_min_nn(buf, lng.billionths, 0), e_w);
     return String(str);
 }
 
@@ -752,6 +753,7 @@ static String createLongAPRSDAO(RawDegrees lng)
 {
     // round to 4 digits and cut the last 2
     char str[20];
+    char buf[32];
     char e_w = 'E';
 
     if (lng.negative)
@@ -759,7 +761,7 @@ static String createLongAPRSDAO(RawDegrees lng)
         e_w = 'W';
     }
 
-    sprintf(str, "%03d%s%c", lng.deg, s_min_nn(lng.billionths, 1 /* high precision */), e_w);
+    sprintf(str, "%03d%s%c", lng.deg, s_min_nn(buf, lng.billionths, 1 /* high precision */), e_w);
     return String(str);
 }
 
@@ -770,10 +772,12 @@ static String createAPRSDAO(RawDegrees lat, RawDegrees lng)
     // integer https://metacpan.org/dist/Ham-APRS-FAP/source/FAP.pm
     // http://www.aprs.org/aprs12/datum.txt
     //
-
     char str[10];
+    char buflat[32];
+    char buflng[32];
+
     // s_min_nn()'s high_precision parameter >= 2 ==> 1 char length
-    sprintf(str, "!w%1s%1s!", s_min_nn(lat.billionths, 2), s_min_nn(lng.billionths, 2));
+    sprintf(str, "!w%1s%1s!", s_min_nn(buflat, lat.billionths, 2), s_min_nn(buflng, lng.billionths, 2));
 
     return String(str);
 }
