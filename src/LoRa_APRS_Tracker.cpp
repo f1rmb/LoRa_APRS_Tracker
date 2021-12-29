@@ -16,7 +16,7 @@
 #include "Deg2DDMMMM.h"
 
 
-#define PROGRAM_VERSION  "0.51"
+#define PROGRAM_VERSION  "0.52"
 
 // Function prototype
 static void buttonThread();
@@ -846,7 +846,7 @@ void loop()
                         uint32_t dispTo = ((gParams.GetDisplayTimeout() == cfg.display_timeout) ? 0 : cfg.display_timeout);
 
                         gParams.ResetDisplayTimeout();
-                        oled.Display("  SCREEN", emptyString, "Timeout: " + ((dispTo > 0) ? String(dispTo) + "ms" : "disabled"), 2000);
+                        oled.Display("  SCREEN", emptyString, "Timeout: " + ((dispTo > 0) ? (String(dispTo) + "ms") : "disabled"), 2000);
                         gParams.SetDisplayTimeout(dispTo);
                     }
                     break;
@@ -864,6 +864,8 @@ void loop()
                             gParams.lastValidGPS.hdop = 0.00;
                             gParams.lastValidGPS.satellites = 0;
                         }
+
+                        gParams.currentHeading = gParams.previousHeading = 0; // We won't move, reset heading.
 
                         oled.Display(" LOCATION", emptyString, "-- Fixed Position --",
                                 String("Lat:  ") + String(gParams.lastValidGPS.latitude, 6),
