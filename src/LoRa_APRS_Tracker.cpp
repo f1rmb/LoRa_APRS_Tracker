@@ -703,7 +703,7 @@ void loop()
             String data(msgStr.encode());
             DlogPrintlnD(data);
 
-            oled.Display(" << TX >>", emptyString, data);
+            oled.Display(" << TX >>", data);
 
             if (cfg.ptt.active)
             {
