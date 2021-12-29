@@ -364,7 +364,7 @@ void setup()
 #if defined(USE_BOOTSCREEN)
     oled.ShowBootscreen("v" + String(PROGRAM_VERSION), 98, 56, BLACK, 4000);
 #else
-    oled.Display("  OE5BPA", "  LoRa APRS Tracker", " by  Peter Buchegger", emptyString, " Mods: Daniel, F1RMB", "               v0.407", 2000);
+    oled.Display("  OE5BPA", "  LoRa APRS Tracker", " by  Peter Buchegger", emptyString, " Mods: Daniel, F1RMB", "                v" + String(PROGRAM_VERSION), 2000);
 #endif
     // Check the callsign setting validity
     if (cfg.callsign.startsWith("NOCALL"))
