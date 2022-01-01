@@ -157,7 +157,7 @@ void OLEDDisplay::ShowBootscreen(const String &version, uint16_t x, uint16_t y, 
     m_display.setCursor(x, y);
     m_display.setTextColor(textColor);
     m_display.setTextSize(1);
-    m_display.println(version);
+    m_display.print(version);
 
     m_display.ssd1306_command(SSD1306_SETCONTRAST);
     m_display.ssd1306_command(1);
