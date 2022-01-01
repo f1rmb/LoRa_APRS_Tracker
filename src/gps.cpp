@@ -5,15 +5,10 @@
 
 #define GPS_BAUDRATE     9600
 
-
-
 GPSDevice::GPSDevice() :
 m_serialGPS(NULL),
 m_isConnected(false),
-m_fixType(0),
-m_lowPowerModeEnabled(false),
-m_lastSleepTime(0),
-m_sleepMS(0)
+m_gnssType(SFE_UBLOX_GNSS_TYPE::GNSS_TYPE_OTHER)
 {
 }
 
@@ -27,7 +22,7 @@ bool GPSDevice::Initialize(HardwareSerial &serial)
     m_serialGPS = &serial;
     m_serialGPS->begin(GPS_BAUDRATE, SERIAL_8N1, GPS_TX, GPS_RX);
 
-    //m_gnss.enableDebugging(Serial);
+    //m_gnss.enableDebugging(Serial, false);
 
     for (int i = 0; (i < 3) && !connect(); i++)
     {
@@ -59,6 +54,16 @@ bool GPSDevice::Initialize(HardwareSerial &serial)
     }
 
     return false;
+}
+
+void GPSDevice::Stop()
+{
+    if (m_serialGPS && m_isConnected)
+    {
+        m_gnss.end();
+        m_serialGPS->flush();
+        m_isConnected = false;
+    }
 }
 
 bool GPSDevice::GetProtocolVersion(uint8_t &high, uint8_t &low)
@@ -106,96 +111,41 @@ bool GPSDevice::FactoryReset()
 
 GPSDevice::GPS_FIXTYPE_t GPSDevice::GetFixType()
 {
-    return static_cast<GPS_FIXTYPE_t>(m_gnss.getFixType());
+    if (m_serialGPS && m_isConnected)
+    {
+        return static_cast<GPS_FIXTYPE_t>(m_gnss.getFixType());
+    }
+
+    return GPS_FIXTYPE_NO_FIX;
 }
 
 bool GPSDevice::HasFix()
 {
-    return m_gnss.getGnssFixOk();
-}
-
-bool GPSDevice::HasData()
-{
-    return (m_gnss.checkUblox());
-}
-
-bool GPSDevice::SetLowPower(bool on, uint32_t millisecs)
-{
-    if (m_lowPowerModeEnabled != on)
+    if (m_serialGPS && m_isConnected)
     {
-        bool result = false;
-
-        if (on)
-        {
-#if 1
-            for (uint8_t i = 0; (i < 3) && ((result = m_gnss.powerSaveMode(true, 2000U)) == false); i++)
-            {
-                delay(200);
-            }
-
-            m_sleepMS = millisecs;
-#else
-            if ((result = m_gnss.powerSaveMode(true, 2000U)))
-            {
-                m_sleepMS = millisecs;
-            }
-#endif
-        }
-        else
-        {
-#if 1
-            for (uint8_t i = 0; (i < 3) && ((result = m_gnss.powerSaveMode(false, 2000U)) == false); i++)
-            {
-                delay(200);
-            }
-#else
-            if ((result = m_gnss.powerSaveMode(false, 2000U)))
-            {
-                m_sleepMS = 0;
-            }
-#endif
-        }
-
-        m_lowPowerModeEnabled = (result ? on : false);
-
-        if (result)
-        {
-            m_lastSleepTime = millis();
-        }
-
-        return result;
+        return m_gnss.getGnssFixOk();
     }
 
     return false;
 }
 
-bool GPSDevice::StillHasToSleep()
+bool GPSDevice::Tick()
 {
-    return (m_lowPowerModeEnabled && ((millis() - m_lastSleepTime) < m_sleepMS));
-}
-
-unsigned long GPSDevice::GetRemainingSleepTime()
-{
-    if (m_lowPowerModeEnabled)
+    if (m_serialGPS && m_isConnected)
     {
-        unsigned long elapsed = (millis() - m_lastSleepTime);
-
-        if (elapsed < m_sleepMS)
-        {
-            return (m_sleepMS - elapsed);
-        }
+        return (m_gnss.checkUblox());
     }
 
-    return 0UL;
+    return false;
 }
 
-bool GPSDevice::IsSleeping()
+uint8_t GPSDevice::IsPowerSaving()
 {
-#if 0
-    if (m_lowPowerModeEnabled)
+    if (m_serialGPS && m_isConnected)
     {
         uint8_t lowPowerMode = m_gnss.getPowerSaveMode(2000U);
 
+#if 0
         if (lowPowerMode == 255)
         {
             Serial.println(F("*** getPowerSaveMode FAILED ***"));
@@ -221,57 +171,115 @@ bool GPSDevice::IsSleeping()
                 Serial.println(F(" (Unknown!)"));
             }
         }
-    }
 #endif
 
-    return (m_lowPowerModeEnabled);
+        return (lowPowerMode);
+    }
+
+    return 255;
 }
 
 bool GPSDevice::GetPVT()
 {
-    return (m_gnss.getPVT() && (m_gnss.getInvalidLlh() == false));
-}
-
-bool GPSDevice::GetDateAndTime(struct tm &dt)
-{
-    if (m_gnss.getTimeValid() && m_gnss.getTimeFullyResolved())
+    if (m_serialGPS && m_isConnected)
     {
-        /* Convert to unix time
-         *  The Unix epoch (or Unix time or POSIX time or Unix timestamp) is the number of seconds that have elapsed
-         *  since January 1, 1970 (midnight UTC/GMT), not counting leap seconds (in ISO 8601: 1970-01-01T00:00:00Z).
-         */
-        dt.tm_sec   = m_gnss.getSecond(0);
-        dt.tm_min   = m_gnss.getMinute(0);
-        dt.tm_hour  = m_gnss.getHour(0);
-        dt.tm_mday  = m_gnss.getDay(0);
-        dt.tm_mon   = m_gnss.getMonth(0) - 1;
-        dt.tm_year  = m_gnss.getYear(0) - 1900;
-        dt.tm_isdst = false;
+        m_gnss.checkUblox();
 
-        return true;
+#if 0
+        bool isNeo = m_gnss.isNeo6M();
+        return (m_gnss.getPVT((isNeo ? 2000 : defaultMaxWait)) && (isNeo ? true : (m_gnss.getInvalidLlh() == false)));
+#else
+        if ((m_gnssType == SFE_UBLOX_GNSS_TYPE::GNSS_TYPE_NEO6M_6) || (m_gnssType == SFE_UBLOX_GNSS_TYPE::GNSS_TYPE_NEO6M_7))
+        {
+            return (m_gnss.getPVT());
+        }
+
+        return (m_gnss.getPVT() && (m_gnss.getInvalidLlh() == false));
+#endif
     }
 
     return false;
 }
 
+bool GPSDevice::FlushAndSetAutoPVT()
+{
+    if (m_serialGPS && m_isConnected)
+    {
+        m_gnss.flushPVT();
+
+        if (m_gnss.setNavigationFrequency(1, 2000) && m_gnss.setAutoPVT(true, uint16_t(2000)))
+        {
+            bool ret = configurePowerSaving(); // Enable GNSS PowerSaving
+
+            return ret;
+        }
+    }
+    return false;
+}
+
+bool GPSDevice::GetDateAndTime(struct tm &dt)
+{
+    if (m_serialGPS && m_isConnected)
+    {
+        if (m_gnss.getTimeValid() &&
+                (((m_gnssType == SFE_UBLOX_GNSS_TYPE::GNSS_TYPE_NEO6M_6) || (m_gnssType == SFE_UBLOX_GNSS_TYPE::GNSS_TYPE_NEO6M_7)) ? true : m_gnss.getTimeFullyResolved()))
+        {
+            /* Convert to unix time
+             *  The Unix epoch (or Unix time or POSIX time or Unix timestamp) is the number of seconds that have elapsed
+             *  since January 1, 1970 (midnight UTC/GMT), not counting leap seconds (in ISO 8601: 1970-01-01T00:00:00Z).
+             */
+            dt.tm_sec   = m_gnss.getSecond(0);
+            dt.tm_min   = m_gnss.getMinute(0);
+            dt.tm_hour  = m_gnss.getHour(0);
+            dt.tm_mday  = m_gnss.getDay(0);
+            dt.tm_mon   = m_gnss.getMonth(0) - 1;
+            dt.tm_year  = m_gnss.getYear(0) - 1900;
+            dt.tm_isdst = false;
+
+            return true;
+        }
+    }
+    return false;
+}
+
 double GPSDevice::GetHeading()
 {
-    return (m_gnss.getHeading() * 1e-5);
+    if (m_serialGPS && m_isConnected)
+    {
+        return (m_gnss.getHeading() * 1e-5);
+    }
+
+    return 0.0;
 }
 
 double GPSDevice::GetLatitude()
 {
-    return (m_gnss.getLatitude() * 1e-7);
+    if (m_serialGPS && m_isConnected)
+    {
+        return (m_gnss.getLatitude() * 1e-7);
+    }
+
+    return 0.0;
 }
 
 double GPSDevice::GetLongitude()
 {
-    return (m_gnss.getLongitude() * 1e-7);
+    if (m_serialGPS && m_isConnected)
+    {
+        return (m_gnss.getLongitude() * 1e-7);
+    }
+
+    return 0.0;
 }
 
 double GPSDevice::GetAltitude() // Meters
 {
-    return (m_gnss.getAltitudeMSL() * 1e-3); // mm to meter
+    if (m_serialGPS && m_isConnected)
+    {
+        return (m_gnss.getAltitudeMSL() * 1e-3); // mm to meter
+    }
+
+    return 0.0;
 }
 
 double GPSDevice::GetAltitudeFT()
@@ -281,7 +289,12 @@ double GPSDevice::GetAltitudeFT()
 
 double GPSDevice::GetSpeedMPS()
 {
-    return (m_gnss.getGroundSpeed() * 1e-3); // mm/s to m/s
+    if (m_serialGPS && m_isConnected)
+    {
+        return (m_gnss.getGroundSpeed() * 1e-3); // mm/s to m/s
+    }
+
+    return 0.0;
 }
 
 double GPSDevice::GetSpeedKPH()
@@ -296,12 +309,32 @@ double GPSDevice::GetSpeedKT()
 
 uint8_t GPSDevice::GetSatellites()
 {
-    return (m_gnss.getSIV());
+    if (m_serialGPS && m_isConnected)
+    {
+        return (m_gnss.getSIV());
+    }
+
+    return 0;
 }
 
 double GPSDevice::GetHDOP()
 {
-    return ((std::min(uint16_t(9999), (m_gnss.getHorizontalDOP()))) * 1e-2); // Avoid crazy value
+    if (m_serialGPS && m_isConnected)
+    {
+        return ((std::min(uint16_t(9999), (m_gnss.getHorizontalDOP()))) * 1e-2); // Avoid crazy value
+    }
+
+    return 99.99;
+}
+
+bool GPSDevice::IsNeo6M()
+{
+    if (m_serialGPS && m_isConnected)
+    {
+        return  ((m_gnssType == SFE_UBLOX_GNSS_TYPE::GNSS_TYPE_NEO6M_6) || (m_gnssType == SFE_UBLOX_GNSS_TYPE::GNSS_TYPE_NEO6M_7));
+    }
+
+    return false;
 }
 
 // Took from TinyGPSPlus
@@ -334,7 +367,6 @@ double GPSDevice::DistanceBetweenTwoCoords(double lat1, double long1, double lat
 bool GPSDevice::connect()
 {
     m_isConnected = false;
-    m_lowPowerModeEnabled = false;
 
     if (m_serialGPS)
     {
@@ -348,19 +380,28 @@ bool GPSDevice::setUBXMode()
 {
     if (m_serialGPS && m_isConnected)
     {
-        m_lowPowerModeEnabled = false;
-        m_gnss.powerSaveMode(false);
-
         // Configure the U-Blox
         if (m_gnss.setUART1Output(COM_TYPE_UBX))
         {
             delay(2000);
-            if (m_gnss.setNavigationFrequency(1) && m_gnss.setAutoPVT(true))
-            {
-                m_gnss.flushPVT();
-                return true;
-            }
+
+            // Detect and force Neo-6M mode
+            m_gnss.setGNSSType((m_gnssType = m_gnss.getModuleType(2000)));
+
+            bool ret = FlushAndSetAutoPVT();
+
+            return ret;
         }
+    }
+
+    return false;
+}
+
+bool GPSDevice::configurePowerSaving()
+{
+    if (m_serialGPS && m_isConnected)
+    {
+        return (m_gnss.powerSaveMode(true, 2000U));
     }
 
     return false;

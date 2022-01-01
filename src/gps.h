@@ -23,6 +23,7 @@ class GPSDevice
 
         // Initialize GPS module, using serial port "serial".
         bool          Initialize(HardwareSerial &serial);
+        void          Stop();
 
         // Get protocol version(s)
         bool          GetProtocolVersion(uint8_t &high, uint8_t &low);
@@ -38,26 +39,22 @@ class GPSDevice
         bool          HasFix();
 
         // Check for available bytes on the user's specified port
-        bool          HasData();
+        bool          Tick();
 
         // Position/Velocity/Time is available and
         // valid (also checking "Invalid lon, lat, height, hMSL, lonHp, latHp, heightHp and hMSLHp")
         bool          GetPVT();
 
+
+        // Flush the current PVT packets, then re-enable the AutoPVT
+        bool          FlushAndSetAutoPVT();
+
+
         // Get GPS time (unix format), if valid.
         bool          GetDateAndTime(struct tm &t);
 
-        // Enter Power Saving mode for "millisecs" long (could also be forced to exit)
-        bool          SetLowPower(bool on, uint32_t millisecs);
-
-        // Get GPS sleeping (PowerSave) state
-        bool          StillHasToSleep();
-
-        // Get remaining Sleep time, in milliseconds (0 == awake)
-        unsigned long GetRemainingSleepTime();
-
-        // Get Sleeping status
-        bool          IsSleeping();
+        // Get PowerSaving status
+        uint8_t       IsPowerSaving();
 
         // Get various GPS informations (call GetPVT() first)
         double        GetHeading();     // in Degrees
@@ -74,19 +71,18 @@ class GPSDevice
         // Return distance between two locations, in meters
         static double DistanceBetweenTwoCoords(double lat_a, double lng_a, double lat_b, double lng_b);
 
+        bool          IsNeo6M();
+
     private:
         bool connect();
         bool setUBXMode();
+        bool configurePowerSaving();
 
     private:
-        HardwareSerial   *m_serialGPS;
-        bool              m_isConnected;
-        SFE_UBLOX_GNSS    m_gnss;
-
-        uint8_t           m_fixType;
-        bool              m_lowPowerModeEnabled;
-        unsigned long     m_lastSleepTime;
-        uint32_t          m_sleepMS;
+        HardwareSerial       *m_serialGPS;
+        bool                  m_isConnected;
+        SFE_UBLOX_GNSS        m_gnss;
+        SFE_UBLOX_GNSS_TYPE   m_gnssType;
 };
 
 
