@@ -32,7 +32,6 @@ static OneButton         userBtn(BUTTON_PIN, true, true);
 static HardwareSerial    ss(1);
 static GPSDevice         gps;
 
-bool isPolling = false;
 
 struct GlobalParameters
 {
