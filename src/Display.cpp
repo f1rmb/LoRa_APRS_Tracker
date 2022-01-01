@@ -3,9 +3,9 @@
 #include <Adafruit_SSD1306.h>
 #include <Wire.h>
 
-#include "dummylogger.h"
-#include "display.h"
-#include "pins.h"
+#include "dummyLogger.h"
+#include "Display.h"
+#include "Pins.h"
 
 static String currentStrings[6]; // header + 5 lines
 #if defined(USE_BOOTSCREEN)

@@ -1,7 +1,7 @@
 #ifndef GPS_H_
 #define GPS_H_
 
-#include "configuration.h"
+#include "Configuration.h"
 #include <SparkFun_u-blox_GNSS_Arduino_Library.h>
 
 class GPSDevice

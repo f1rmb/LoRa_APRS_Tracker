@@ -1,5 +1,5 @@
 
-#include "power_management.h"
+#include "PowerManagement.h"
 
 // cppcheck-suppress uninitMemberVar
 PowerManagement::PowerManagement()

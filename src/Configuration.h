@@ -1,6 +1,7 @@
 #ifndef CONFIGURATION_H_
 #define CONFIGURATION_H_
 
+#include <iterator>
 #include <list>
 
 #include <Arduino.h>
@@ -13,45 +14,50 @@ class Configuration
         class Beacon
         {
             public:
+                class Smart_Beacon
+                {
+                    public:
+                        Smart_Beacon() :
+                            active(false),
+                            turn_min(25),
+                            slow_rate(300),
+                            slow_speed(10),
+                            fast_rate(60),
+                            fast_speed(100),
+                            min_tx_dist(100),
+                            min_bcn(5)
+                        {
+                        }
+
+                        bool      active;
+                        uint32_t  turn_min;
+                        uint32_t  slow_rate;
+                        uint32_t  slow_speed;
+                        uint32_t  fast_rate;
+                        uint32_t  fast_speed;
+                        uint32_t  min_tx_dist;
+                        uint32_t  min_bcn;
+                };
+
                 Beacon() :
-                    message("LoRa Tracker, Info: github.com/lora-aprs/LoRa_APRS_Tracker"),
+                    callsign("NOCALL-10"),
+                    path("WIDE1-1"),
+                    message("LoRa Tracker"),
                     timeout(1),
-                    button_tx(false),
                     symbol("["),
-                    overlay("/")
+                    overlay("/"),
+                    enhance_precision(true)
                 {
                 }
 
-                String   message;
-                uint32_t timeout;
-                bool     button_tx;
-                String   symbol;
-                String   overlay;
-        };
-
-        class Smart_Beacon
-        {
-            public:
-                Smart_Beacon() :
-                    active(false),
-                    turn_min(25),
-                    slow_rate(300),
-                    slow_speed(10),
-                    fast_rate(60),
-                    fast_speed(100),
-                    min_tx_dist(100),
-                    min_bcn(5)
-                {
-                }
-
-                bool      active;
-                uint32_t  turn_min;
-                uint32_t  slow_rate;
-                uint32_t  slow_speed;
-                uint32_t  fast_rate;
-                uint32_t  fast_speed;
-                uint32_t  min_tx_dist;
-                uint32_t  min_bcn;
+                String       callsign;
+                String       path;
+                String       message;
+                uint32_t     timeout;
+                String       symbol;
+                String       overlay;
+                Smart_Beacon smart_beacon;
+                bool         enhance_precision;
         };
 
         class LoRa
@@ -101,15 +107,17 @@ class Configuration
                     latitude(0.00000),
                     longitude(0.00000),
                     altitude(0),
+                    message("LoRa Tracker - GPS Off"),
                     symbol("i"),
                     overlay("/")
                 {
 
                 }
 
-                double latitude;
-                double longitude;
+                double   latitude;
+                double   longitude;
                 uint32_t altitude;
+                String   message;
                 String   symbol;
                 String   overlay;
         };
@@ -119,35 +127,41 @@ class Configuration
             public:
                 Display() :
                     invert(false),
-                    rotation(0) // 0 .. 3
+                    rotation(0), // 0 .. 3
+                    timeout(CONFIGURATION_DISPLAY_TIMEOUT)
                 {
-
                 }
 
-                bool invert;
-                uint8_t rotation;
+                bool     invert;
+                uint8_t  rotation;
+                uint32_t timeout;
 
+        };
+
+        class Button {
+            public:
+                Button() :
+                    tx(false),
+                    alt_message(false)
+                {
+                }
+
+                bool tx;
+                bool alt_message;
         };
 
         Configuration() :
-            callsign("NOCALL-10"),
-            debug(false),
-            enhance_precision(true),
-            display_timeout(CONFIGURATION_DISPLAY_TIMEOUT)
+            debug(false)
         {
+        }
 
-        };
-
-        String       callsign;
-        bool         debug;
-        bool         enhance_precision;
-        uint32_t     display_timeout;
-        Beacon       beacon;
-        Smart_Beacon smart_beacon;
-        LoRa         lora;
-        PTT          ptt;
-        Location     location;
-        Display      display;
+        bool              debug;
+        std::list<Beacon> beacons;
+        Button            button;
+        Location          location;
+        LoRa              lora;
+        PTT               ptt;
+        Display           display;
 };
 
 class ConfigurationManagement

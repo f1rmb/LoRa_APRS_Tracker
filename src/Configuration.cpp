@@ -4,8 +4,10 @@
 #include <ArduinoJson.h>
 #endif
 
-#include "dummylogger.h"
-#include "configuration.h"
+#include "dummyLogger.h"
+#include "Configuration.h"
+
+const uint32_t Configuration::CONFIGURATION_DISPLAY_TIMEOUT;
 
 ConfigurationManagement::ConfigurationManagement(String FilePath) :
 m_FilePath(FilePath)
@@ -48,72 +50,79 @@ Configuration ConfigurationManagement::readConfiguration()
 
     file.close();
 
-
     Configuration conf;
 
-    if (data.containsKey("callsign"))
+    conf.debug                          = data["debug"] | false;
+
+    JsonArray beacons = data["beacons"].as<JsonArray>();
+    for (JsonVariant v : beacons)
     {
-        conf.callsign                 = data["callsign"].as<String>();
+        Configuration::Beacon beacon;
+
+        if (v.containsKey("callsign"))
+        {
+            beacon.callsign             = v["callsign"].as<String>();
+        }
+
+        if (v.containsKey("path"))
+        {
+            beacon.path                 = v["path"].as<String>();
+        }
+
+        if (v.containsKey("message"))
+        {
+            beacon.message              = v["message"].as<String>();
+        }
+
+        beacon.timeout = v["timeout"] | 1;
+
+        if (v.containsKey("symbol"))
+        {
+            beacon.symbol               = v["symbol"].as<String>();
+        }
+
+        if (v.containsKey("overlay"))
+        {
+            beacon.overlay              = v["overlay"].as<String>();
+        }
+
+        beacon.smart_beacon.active      = v["smart_beacon"]["active"] | false;
+        beacon.smart_beacon.turn_min    = v["smart_beacon"]["turn_min"] | 25;
+        beacon.smart_beacon.slow_rate   = v["smart_beacon"]["slow_rate"] | 300;
+        beacon.smart_beacon.slow_speed  = v["smart_beacon"]["slow_speed"] | 10;
+        beacon.smart_beacon.fast_rate   = v["smart_beacon"]["fast_rate"] | 60;
+        beacon.smart_beacon.fast_speed  = v["smart_beacon"]["fast_speed"] | 100;
+        beacon.smart_beacon.min_tx_dist = v["smart_beacon"]["min_tx_dist"] | 100;
+        beacon.smart_beacon.min_bcn     = v["smart_beacon"]["min_bcn"] | 5;
+
+        beacon.enhance_precision        = v["enhance_precision"] | false;
+
+        conf.beacons.push_back(beacon);
     }
 
-    conf.debug                        = data["debug"] | false;
-    conf.enhance_precision            = data["enhance_precision"] | false;
-    conf.display_timeout              = data["display_timeout"] | Configuration::CONFIGURATION_DISPLAY_TIMEOUT;
-
-    if (data.containsKey("beacon"))
+    if (data.containsKey("button"))
     {
-        if (data["beacon"].containsKey("message"))
-        {
-            conf.beacon.message       = data["beacon"]["message"].as<String>();
-        }
-
-        conf.beacon.timeout = data["beacon"]["timeout"] | 1;
-
-        if (data["beacon"].containsKey("button_tx"))
-        {
-            conf.beacon.button_tx     = data["beacon"]["button_tx"] | false;
-        }
-
-        if (data["beacon"].containsKey("symbol"))
-        {
-            conf.beacon.symbol        = data["beacon"]["symbol"].as<String>();
-        }
-
-        if (data["beacon"].containsKey("overlay"))
-        {
-            conf.beacon.overlay       = data["beacon"]["overlay"].as<String>();
-        }
-    }
-
-    if (data.containsKey("smart_beacon"))
-    {
-        conf.smart_beacon.active      = data["smart_beacon"]["active"] | false;
-        conf.smart_beacon.turn_min    = data["smart_beacon"]["turn_min"] | 25;
-        conf.smart_beacon.slow_rate   = data["smart_beacon"]["slow_rate"] | 300;
-        conf.smart_beacon.slow_speed  = data["smart_beacon"]["slow_speed"] | 10;
-        conf.smart_beacon.fast_rate   = data["smart_beacon"]["fast_rate"] | 60;
-        conf.smart_beacon.fast_speed  = data["smart_beacon"]["fast_speed"] | 100;
-        conf.smart_beacon.min_tx_dist = data["smart_beacon"]["min_tx_dist"] | 100;
-        conf.smart_beacon.min_bcn     = data["smart_beacon"]["min_bcn"] | 5;
+        conf.button.tx                      = data["button"]["tx"] | false;
+        conf.button.alt_message             = data["button"]["alt_message"] | false;
     }
 
     if (data.containsKey("lora"))
     {
-        conf.lora.frequencyRx         = data["lora"]["frequency_rx"] | 433775000;
-        conf.lora.frequencyTx         = data["lora"]["frequency_tx"] | 433775000;
-        conf.lora.power               = data["lora"]["power"] | 20;
-        conf.lora.spreadingFactor     = data["lora"]["spreading_factor"] | 12;
-        conf.lora.signalBandwidth     = data["lora"]["signal_bandwidth"] | 125000;
-        conf.lora.codingRate4         = data["lora"]["coding_rate4"] | 5;
+        conf.lora.frequencyRx           = data["lora"]["frequency_rx"] | 433775000;
+        conf.lora.frequencyTx           = data["lora"]["frequency_tx"] | 433775000;
+        conf.lora.power                 = data["lora"]["power"] | 20;
+        conf.lora.spreadingFactor       = data["lora"]["spreading_factor"] | 12;
+        conf.lora.signalBandwidth       = data["lora"]["signal_bandwidth"] | 125000;
+        conf.lora.codingRate4           = data["lora"]["coding_rate4"] | 5;
     }
 
     if (data.containsKey("ptt_output"))
     {
-        conf.ptt.active               = data["ptt_output"]["active"] | false;
-        conf.ptt.io_pin               = data["ptt_output"]["io_pin"] | 4;
-        conf.ptt.start_delay          = data["ptt_output"]["start_delay"] | 0;
-        conf.ptt.end_delay            = data["ptt_output"]["end_delay"] | 0;
-        conf.ptt.reverse              = data["ptt_output"]["reverse"] | false;
+        conf.ptt.active                 = data["ptt_output"]["active"] | false;
+        conf.ptt.io_pin                 = data["ptt_output"]["io_pin"] | 4;
+        conf.ptt.start_delay            = data["ptt_output"]["start_delay"] | 0;
+        conf.ptt.end_delay              = data["ptt_output"]["end_delay"] | 0;
+        conf.ptt.reverse                = data["ptt_output"]["reverse"] | false;
     }
 
     if (data.containsKey("location"))
@@ -121,15 +130,15 @@ Configuration ConfigurationManagement::readConfiguration()
         // JSON to double looses precision, hence use sscanf()
         if (toDouble(data["location"]["latitude"].as<String>(), &conf.location.latitude) == false)
         {
-            conf.location.latitude  = data["location"]["latitude"];
+            conf.location.latitude      = data["location"]["latitude"];
         }
 
         // JSON to double looses precision, hence use sscanf()
         if (toDouble(data["location"]["longitude"].as<String>(), &conf.location.longitude) == false)
         {
-            conf.location.longitude = data["location"]["longitude"];
+            conf.location.longitude     = data["location"]["longitude"];
         }
-        conf.location.altitude      = data["location"]["altitude"];
+        conf.location.altitude          = data["location"]["altitude"];
 
         if (data["location"].containsKey("symbol"))
         {
@@ -140,12 +149,18 @@ Configuration ConfigurationManagement::readConfiguration()
         {
             conf.location.overlay       = data["location"]["overlay"].as<String>();
         }
+
+        if (data["location"].containsKey("message"))
+        {
+            conf.location.message       = data["location"]["message"].as<String>();
+        }
     }
 
     if (data.containsKey("display"))
     {
         conf.display.invert             = data["display"]["invert"] | false;
         conf.display.rotation           = data["display"]["rotation"] | 0;
+        conf.display.timeout            = data["display"]["timeout"] | Configuration::CONFIGURATION_DISPLAY_TIMEOUT;
     }
 
     return conf;
@@ -164,23 +179,33 @@ void ConfigurationManagement::writeConfiguration(Configuration conf)
 
     DynamicJsonDocument data(2048);
 
-    data["callsign"]                    = conf.callsign;
+    JsonArray beacons = data.createNestedArray("beacons");
+    for (Configuration::Beacon beacon : conf.beacons) {
+        JsonObject v = beacons.createNestedObject();
+
+        v["callsign"]                    = beacon.callsign;
+        v["path"]                        = beacon.path;
+        v["message"]                     = beacon.message;
+        v["timeout"]                     = beacon.timeout;
+        v["symbol"]                      = beacon.symbol;
+        v["overlay"]                     = beacon.overlay;
+
+        v["smart_beacon"]["active"]      = beacon.smart_beacon.active;
+        v["smart_beacon"]["turn_min"]    = beacon.smart_beacon.turn_min;
+        v["smart_beacon"]["slow_rate"]   = beacon.smart_beacon.slow_rate;
+        v["smart_beacon"]["slow_speed"]  = beacon.smart_beacon.slow_speed;
+        v["smart_beacon"]["fast_rate"]   = beacon.smart_beacon.fast_rate;
+        v["smart_beacon"]["fast_speed"]  = beacon.smart_beacon.fast_speed;
+        v["smart_beacon"]["min_tx_dist"] = beacon.smart_beacon.min_tx_dist;
+        v["smart_beacon"]["min_bcn"]     = beacon.smart_beacon.min_bcn;
+
+        v["enhance_precision"] = beacon.enhance_precision;
+    }
+
     data["debug"]                       = conf.debug;
-    data["enhance_precision"]           = conf.enhance_precision;
-    data["display_timeout"]             = conf.display_timeout;
-    data["beacon"]["message"]           = conf.beacon.message;
-    data["beacon"]["timeout"]           = conf.beacon.timeout;
-    data["beacon"]["button_tx"]         = conf.beacon.button_tx;
-    data["beacon"]["symbol"]            = conf.beacon.symbol;
-    data["beacon"]["overlay"]           = conf.beacon.overlay;
-    data["smart_beacon"]["active"]      = conf.smart_beacon.active;
-    data["smart_beacon"]["turn_min"]    = conf.smart_beacon.turn_min;
-    data["smart_beacon"]["slow_rate"]   = conf.smart_beacon.slow_rate;
-    data["smart_beacon"]["slow_speed"]  = conf.smart_beacon.slow_speed;
-    data["smart_beacon"]["fast_rate"]   = conf.smart_beacon.fast_rate;
-    data["smart_beacon"]["fast_speed"]  = conf.smart_beacon.fast_speed;
-    data["smart_beacon"]["min_tx_dist"] = conf.smart_beacon.min_tx_dist;
-    data["smart_beacon"]["min_bcn"]     = conf.smart_beacon.min_bcn;
+
+    data["button"]["tx"]                = conf.button.tx;
+    data["button"]["alt_message"]       = conf.button.alt_message;
 
     data["lora"]["frequency_rx"]        = conf.lora.frequencyRx;
     data["lora"]["frequency_tx"]        = conf.lora.frequencyTx;
@@ -200,9 +225,11 @@ void ConfigurationManagement::writeConfiguration(Configuration conf)
     data["location"]["altitude"]        = conf.location.altitude;
     data["location"]["symbol"]          = conf.location.symbol;
     data["location"]["overlay"]         = conf.location.overlay;
+    data["location"]["message"]         = conf.location.message;
 
     data["display"]["invert"]           = conf.display.invert;
     data["display"]["rotation"]         = conf.display.rotation;
+    data["display"]["timeout"]          = conf.display.timeout;
 
     serializeJson(data, file);
     file.close();

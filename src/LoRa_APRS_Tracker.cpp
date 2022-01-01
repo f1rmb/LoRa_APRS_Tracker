@@ -7,25 +7,28 @@
 
 #include <esp_sleep.h>
 #include <driver/uart.h>
+#include <soc/rtc_wdt.h>
 
 #include <thread>
 
-#include "dummylogger.h"
-#include "configuration.h"
-#include "gps.h"
-#include "display.h"
-#include "pins.h"
-#include "power_management.h"
+#include "dummyLogger.h"
+#include "Configuration.h"
+#include "GPSDevice.h"
+#include "Display.h"
+#include "Pins.h"
+#include "PowerManagement.h"
+#include "BeaconManager.h"
 #include "Deg2DDMMMM.h"
 
 
-#define PROGRAM_VERSION  "0.60"
+#define PROGRAM_VERSION  "0.70"
 
 // Function prototype
 static void buttonThread();
 
 
 static Configuration     cfg;
+static BeaconManager     bcm;
 static OLEDDisplay       oled;
 static PowerManagement   pm;
 static OneButton         userBtn(BUTTON_PIN, true, true);
@@ -68,10 +71,11 @@ struct GlobalParameters
     public:
         enum BUTTON_CLICKED
         {
-            BUTTON_CLICKED_NONE  = 0,
-            BUTTON_CLICKED_ONCE  = 1,
-            BUTTON_CLICKED_TWICE = 2,
-            BUTTON_CLICKED_MULTI = 3
+            BUTTON_CLICKED_NONE      = 0,
+            BUTTON_CLICKED_ONCE      = 1,
+            BUTTON_CLICKED_TWICE     = 2,
+            BUTTON_CLICKED_MULTI     = 3,
+            BUTTON_CLICKED_LONGPRESS = 4
         };
 
     public:
@@ -201,10 +205,16 @@ static void buttonMultiPressCallback()
     gParams.btnClicks = GlobalParameters::BUTTON_CLICKED_MULTI;
 }
 
+static void buttonLongPressCallback()
+{
+    gParams.btnClicks = GlobalParameters::BUTTON_CLICKED_LONGPRESS;
+}
+
 static void loadConfiguration()
 {
     ConfigurationManagement confmg("/tracker.json");
     cfg = confmg.readConfiguration();
+    bcm.loadConfig(cfg.beacons);
 }
 
 static void gpsInitialize()
@@ -368,7 +378,8 @@ void setup()
     oled.Display("  OE5BPA", "  LoRa APRS Tracker", " by  Peter Buchegger", emptyString, " Mods: Daniel, F1RMB", "                v" + String(PROGRAM_VERSION), 2000);
 #endif
     // Check the callsign setting validity
-    if (cfg.callsign.startsWith("NOCALL"))
+    if ((bcm.getCurrentBeaconConfig()->callsign.length() == 0) ||
+            bcm.getCurrentBeaconConfig()->callsign.startsWith("NOCALL"))
     {
         DlogPrintlnE("You have to change your settings in 'data/tracker.json' and "
                 "upload it via \"Upload File System image\"!");
@@ -387,7 +398,7 @@ void setup()
         digitalWrite(cfg.ptt.io_pin, cfg.ptt.reverse ? HIGH : LOW);
     }
 
-    gParams.SetDisplayTimeout(cfg.display_timeout);
+    gParams.SetDisplayTimeout(cfg.display.timeout);
 
     // make sure wifi and bt are off as we don't need it:
     WiFi.mode(WIFI_OFF);
@@ -397,9 +408,10 @@ void setup()
     userBtn.attachClick(buttonClickCallback);
     userBtn.attachDoubleClick(buttonDoubleClickCallback);
     userBtn.attachMultiClick(buttonMultiPressCallback);
+    userBtn.attachLongPressStart(buttonLongPressCallback);
 
-    DlogPrintlnI("Smart Beacon is " + getOnOff(cfg.smart_beacon.active));
-    oled.Display("   INFO", emptyString, "Smart Beacon is " + getOnOff(cfg.smart_beacon.active), 1000);
+    DlogPrintlnI("Smart Beacon is " + getOnOff(bcm.getCurrentBeaconConfig()->smart_beacon.active));
+    oled.Display("   INFO", emptyString, "Smart Beacon is " + getOnOff(bcm.getCurrentBeaconConfig()->smart_beacon.active), 1000);
     DlogPrintlnI("setup done...");
 
 #if 0
@@ -524,16 +536,16 @@ void loop()
                 {
                     gParams.sendPositionUpdate = true;
 
-                    if (cfg.smart_beacon.active)
+                    if (bcm.getCurrentBeaconConfig()->smart_beacon.active)
                     {
                         gParams.currentHeading = currentHeading;
-                        // enforce message text on slowest cfg.smart_beacon.slow_rate
+                        // enforce message text on slowest smart_beacon.slow_rate
                         gParams.rateLimitMessageText = 0;
                     }
                     else
                     {
-                        // enforce message text every n's cfg.beacon.timeout frame
-                        if ((cfg.beacon.timeout * gParams.rateLimitMessageText) > 30)
+                        // enforce message text every n's beacon.timeout frame
+                        if ((bcm.getCurrentBeaconConfig()->timeout * gParams.rateLimitMessageText) > 30)
                         {
                             gParams.rateLimitMessageText = 0;
                         }
@@ -543,7 +555,7 @@ void loop()
         }
 
         // Smart beaconing, with GPS Fix
-        if ((gParams.sendPositionUpdate == false) && gpsHasFix && cfg.smart_beacon.active)
+        if ((gParams.sendPositionUpdate == false) && gpsHasFix && bcm.getCurrentBeaconConfig()->smart_beacon.active)
         {
             uint32_t lastTx = (millis() - gParams.lastTxTime);
 
@@ -565,10 +577,11 @@ void loop()
                 // Get headings and heading delta
                 double headingDelta = fabs(gParams.previousHeading - gParams.currentHeading);
 
-                if (lastTx > (cfg.smart_beacon.min_bcn * 1000))
+                if (lastTx > (bcm.getCurrentBeaconConfig()->smart_beacon.min_bcn * 1000))
                 {
                     // Check for heading more than config's **turn_min** degrees
-                    if ((headingDelta > double(cfg.smart_beacon.turn_min)) && (gParams.lastTxDistance > cfg.smart_beacon.min_tx_dist))
+                    if ((headingDelta > double(bcm.getCurrentBeaconConfig()->smart_beacon.turn_min)) &&
+                            (gParams.lastTxDistance > bcm.getCurrentBeaconConfig()->smart_beacon.min_tx_dist))
                     {
                         gParams.sendPositionUpdate = true;
                     }
@@ -598,26 +611,28 @@ void loop()
         // Time to send an APRS frame
         if (gParams.sendPositionUpdate && gpsHasFix)
         {
-            APRSMessage        msgStr;
+            APRSMessage        msgAprs;
             Deg2DDMMMMPosition pLat, pLong;
             char               latBuf[32];
             char               longBuf[32];
 
             gParams.sendPositionUpdate = false;
-            gParams.nextBeaconTimeStamp = now() + (cfg.smart_beacon.active ? cfg.smart_beacon.slow_rate : (cfg.beacon.timeout * SECS_PER_MIN));
+            gParams.nextBeaconTimeStamp = now() + (bcm.getCurrentBeaconConfig()->smart_beacon.active ?
+                    bcm.getCurrentBeaconConfig()->smart_beacon.slow_rate : (bcm.getCurrentBeaconConfig()->timeout * SECS_PER_MIN));
 
-            msgStr.setSource(cfg.callsign);
-            msgStr.setDestination("APLT00-1");
+            msgAprs.setSource(bcm.getCurrentBeaconConfig()->callsign);
+            msgAprs.setPath(bcm.getCurrentBeaconConfig()->path);
+            msgAprs.setDestination("APLT00-1");
 
             // Lat/Long
-            Deg2DDMMMM::Convert(pLat, currentLat, cfg.enhance_precision);
-            Deg2DDMMMM::Convert(pLong, currentLong, cfg.enhance_precision);
+            Deg2DDMMMM::Convert(pLat, currentLat, bcm.getCurrentBeaconConfig()->enhance_precision);
+            Deg2DDMMMM::Convert(pLong, currentLong, bcm.getCurrentBeaconConfig()->enhance_precision);
 
             String             latStr(Deg2DDMMMM::Format(latBuf, pLat, false));
             String             longStr(Deg2DDMMMM::Format(longBuf, pLong, true));
             String             daoStr;
 
-            if (cfg.enhance_precision)
+            if (bcm.getCurrentBeaconConfig()->enhance_precision)
             {
                 char daoBuf[16];
 
@@ -669,8 +684,8 @@ void loop()
             }
 
 
-            String aprsmsg("!" + latStr + (gParams.locationFromGPS ? cfg.beacon.overlay : cfg.location.overlay) + longStr +
-                    (gParams.locationFromGPS ? cfg.beacon.symbol : cfg.location.symbol) + courseAndSpeedStr + altStr);
+            String aprsmsgStr("!" + latStr + (gParams.locationFromGPS ? bcm.getCurrentBeaconConfig()->overlay : cfg.location.overlay) + longStr +
+                    (gParams.locationFromGPS ? bcm.getCurrentBeaconConfig()->symbol : cfg.location.symbol) + courseAndSpeedStr + altStr);
 
             // message_text every 10's packet (i.e. if we have beacon rate 1min at high
             // speed -> every 10min). May be enforced above (at expirey of smart beacon
@@ -678,22 +693,22 @@ void loop()
             // static rate 10 -> every third packet)
             if ((gParams.rateLimitMessageText++ % 10) == 0)
             {
-                aprsmsg += cfg.beacon.message;
+                aprsmsgStr += (gParams.locationFromGPS ? bcm.getCurrentBeaconConfig()->message : cfg.location.message);
             }
 
             if (gParams.batteryIsConnected)
             {
-                aprsmsg += " -  _Bat.: " + gParams.batteryVoltage + "V - Cur.: " + gParams.batteryChargeCurrent + "mA";
+                aprsmsgStr += " -  _Bat.: " + gParams.batteryVoltage + "V - Cur.: " + gParams.batteryChargeCurrent + "mA";
             }
 
 
-            if (cfg.enhance_precision && (daoStr.length() > 0))
+            if (bcm.getCurrentBeaconConfig()->enhance_precision && (daoStr.length() > 0))
             {
-                aprsmsg += " " + daoStr;
+                aprsmsgStr += " " + daoStr;
             }
 
-            msgStr.getBody()->setData(aprsmsg);
-            String data(msgStr.encode());
+            msgAprs.getBody()->setData(aprsmsgStr);
+            String data(msgAprs.encode());
             DlogPrintlnD(data);
 
             oled.Display(" << TX >>", data);
@@ -726,7 +741,7 @@ void loop()
                 gParams.sendPositionUpdate = true; // Try to resend on the next run
             }
 
-            if (cfg.smart_beacon.active)
+            if (bcm.getCurrentBeaconConfig()->smart_beacon.active)
             {
                 gParams.lastTxLat       = currentLat;
                 gParams.lastTxLong      = currentLong;
@@ -744,40 +759,40 @@ void loop()
 
         time_t n = now();
         bool posIsValid = gParams.lastValidGPS.PositionIsValid();
-        oled.Display(cfg.callsign,
+        oled.Display(bcm.getCurrentBeaconConfig()->callsign,
                 formatToDateString(n) + " " + formatToTimeString(n),
                 String("Sats: ") + (posIsValid ? (gParams.locationFromGPS ? String(gParams.lastValidGPS.satellites) : "F" ) : "-") + " HDOP: " + (posIsValid ? String(gParams.lastValidGPS.hdop) : "--.--"),
-                String("Nxt Bcn: ") + (posIsValid ? (cfg.smart_beacon.active ? "~" : "") + formatToTimeString(gParams.nextBeaconTimeStamp) : "--:--:--"),
+                String("Nxt Bcn: ") + (posIsValid ? (bcm.getCurrentBeaconConfig()->smart_beacon.active ? "~" : "") + formatToTimeString(gParams.nextBeaconTimeStamp) : "--:--:--"),
                 (gParams.batteryIsConnected ? (String("Bat: ") + gParams.batteryVoltage + "V, " + gParams.batteryChargeCurrent + "mA") : "Powered via USB"),
-                String("Smart Beacon: " + getOnOff(cfg.smart_beacon.active)));
+                String("Smart Beacon: " + getOnOff(bcm.getCurrentBeaconConfig()->smart_beacon.active)));
 
 #if 0
         Serial.println(String("Sats: ") + String(gParams.lastValidGPS.satellites) + " HDOP: " + gParams.lastValidGPS.hdop +
                 " GPS: " + (posIsValid ? "VALID" : "INVALID") + (gpsHasFix ? " FIX" : " NOFIX") + (" f:") + String(gpsFix) + "  type:" + String(gpsFixType));
 //        Serial.println(String("Sats: ") + String(gParams.lastValidGPS.satellites) + " HDOP: " + gParams.lastValidGPS.hdop +
 //                " GPS: " + (posIsValid ? "Sl" : "Ake"));
-        Serial.println(String("Nxt Bcn: ") + (cfg.smart_beacon.active ? "~" : "") + formatToTimeString(gParams.nextBeaconTimeStamp) + " / " + formatToTimeString(n));
+        Serial.println(String("Nxt Bcn: ") + (bcm.getCurrentBeaconConfig()->smart_beacon.active ? "~" : "") + formatToTimeString(gParams.nextBeaconTimeStamp) + " / " + formatToTimeString(n));
 #else
         //Serial.println(String("Sats: ") + (posIsValid ? String(gParams.lastValidGPS.satellites) : "-") + " HDOP: " + (posIsValid ? String(gParams.lastValidGPS.hdop) : "--.--"));
-        //Serial.println(String("Nxt Bcn: ") + (posIsValid ? (cfg.smart_beacon.active ? "~" : "") + formatToTimeString(gParams.nextBeaconTimeStamp) : "--:--:--"));
+        //Serial.println(String("Nxt Bcn: ") + (posIsValid ? (bcm.getCurrentBeaconConfig()->smart_beacon.active ? "~" : "") + formatToTimeString(gParams.nextBeaconTimeStamp) : "--:--:--"));
 
 #endif
 
         // Beacon's TX interval adjustement
         if (timeIsValid)
         {
-            if (cfg.smart_beacon.active)
+            if (bcm.getCurrentBeaconConfig()->smart_beacon.active)
             {
                 // Change the Tx internal based on the current speed
                 int currentSpeed = int((currentSpeedKnot / 1.9438444924));
 
-                if (currentSpeed < cfg.smart_beacon.slow_speed)
+                if (currentSpeed < bcm.getCurrentBeaconConfig()->smart_beacon.slow_speed)
                 {
-                    gParams.txInterval = (cfg.smart_beacon.slow_rate * 1000);
+                    gParams.txInterval = (bcm.getCurrentBeaconConfig()->smart_beacon.slow_rate * 1000);
                 }
-                else if (currentSpeed > cfg.smart_beacon.fast_speed)
+                else if (currentSpeed > bcm.getCurrentBeaconConfig()->smart_beacon.fast_speed)
                 {
-                    gParams.txInterval = (cfg.smart_beacon.fast_rate * 1000);
+                    gParams.txInterval = (bcm.getCurrentBeaconConfig()->smart_beacon.fast_rate * 1000);
                 }
                 else
                 {
@@ -791,7 +806,8 @@ void loop()
                      * would lead to decrease of beacon rate in between 5 to 20 km/h. what
                      * is even below the slow speed rate.
                      */
-                    gParams.txInterval = std::min(cfg.smart_beacon.slow_rate, (cfg.smart_beacon.fast_speed * cfg.smart_beacon.fast_rate) / currentSpeed) * 1000;
+                    gParams.txInterval = std::min(bcm.getCurrentBeaconConfig()->smart_beacon.slow_rate,
+                            (bcm.getCurrentBeaconConfig()->smart_beacon.fast_speed * bcm.getCurrentBeaconConfig()->smart_beacon.fast_rate) / currentSpeed) * 1000;
                 }
             }
         }
@@ -811,7 +827,7 @@ void loop()
                 case GlobalParameters::BUTTON_CLICKED_ONCE:
                     {
                         // Send a frame if the screen is already lit.
-                        if (cfg.beacon.button_tx)
+                        if (cfg.button.tx)
                         {
                             gParams.sendPositionUpdate = true;
                         }
@@ -819,9 +835,9 @@ void loop()
                     break;
 
                 case GlobalParameters::BUTTON_CLICKED_TWICE:
-                    if (cfg.display_timeout > 0)
+                    if (cfg.display.timeout > 0)
                     {
-                        uint32_t dispTo = ((gParams.GetDisplayTimeout() == cfg.display_timeout) ? 0 : cfg.display_timeout);
+                        uint32_t dispTo = ((gParams.GetDisplayTimeout() == cfg.display.timeout) ? 0 : cfg.display.timeout);
 
                         gParams.ResetDisplayTimeout();
                         oled.Display("  SCREEN", emptyString, "Timeout: " + ((dispTo > 0) ? (String(dispTo) + "ms") : "disabled"), 2000);
@@ -860,10 +876,15 @@ void loop()
                     {
                         oled.Display(" LOCATION", emptyString, "   -- Using GPS --");
 #ifdef TTGO_T_Beam_V1_0
+                        // It takes too long to initialize the GNSS, hence
+                        // disable the watchdog while the process is running
+                        // prevent it to kicks in
+                        rtc_wdt_disable();
                         pm.GPSActivate();
                         delay(5000);
                         gpsInitialize();
                         delay(3000);
+                        rtc_wdt_enable(); // All done, reenable the WDT.
 #endif
                         gParams.lastValidGPS.Reset();
                         gps.Tick();
@@ -873,7 +894,16 @@ void loop()
                     gParams.waitForNextPVT = true;
                     break;
 
-                default:
+                case GlobalParameters::BUTTON_CLICKED_LONGPRESS:
+                    if (cfg.button.alt_message)
+                    {
+                        bcm.loadNextBeacon();
+                        oled.Display(bcm.getCurrentBeaconConfig()->callsign, emptyString, bcm.getCurrentBeaconConfig()->message, 2000);
+                        gParams.forceScreenRefresh = true;
+                    }
+                    break;
+
+                 default:
                     break;
             }
 
@@ -914,7 +944,7 @@ void loop()
             {
                 if (digitalRead(BUTTON_PIN) == LOW)
                 {
-                    gParams.awakenTimePeriod = ((cfg.display_timeout > 0) ? cfg.display_timeout : 2000);
+                    gParams.awakenTimePeriod = ((cfg.display.timeout > 0) ? cfg.display.timeout : 2000);
                 }
                 else
                 {

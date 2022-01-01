@@ -1,7 +1,7 @@
 
 
-#include "pins.h"
-#include "gps.h"
+#include "Pins.h"
+#include "GPSDevice.h"
 
 #define GPS_BAUDRATE     9600
 
