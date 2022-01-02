@@ -21,7 +21,7 @@
 #include "Deg2DDMMMM.h"
 
 
-#define PROGRAM_VERSION  "0.74"
+#define PROGRAM_VERSION  "0.75"
 
 // Function prototype
 static void buttonThread();
@@ -806,7 +806,7 @@ void loop()
         {
             if (gParams.locationFromGPS && bcm.getCurrentBeaconConfig()->smart_beacon.active)
             {
-                // Change the Tx internal based on the current speed
+                // Change the Tx interval based on the current speed
                 int currentSpeed = int((currentSpeedKnot / 1.9438444924));
 
                 if (currentSpeed < bcm.getCurrentBeaconConfig()->smart_beacon.slow_speed)
@@ -902,12 +902,16 @@ void loop()
                         // It takes too long to initialize the GNSS, hence
                         // disable the watchdog while the process is running
                         // prevents it to kicks in
+                        rtc_wdt_protect_off();
                         rtc_wdt_disable();
+                        rtc_wdt_protect_on();
                         pm.GPSActivate();
                         delay(5000);
                         gpsInitialize();
                         delay(3000);
+                        rtc_wdt_protect_off();
                         rtc_wdt_enable(); // All done, reenable the WDT.
+                        rtc_wdt_protect_on();
 #endif
                         gParams.lastValidGPS.Reset();
                         gps.Tick();
