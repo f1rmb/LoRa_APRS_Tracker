@@ -21,7 +21,7 @@
 #include "Deg2DDMMMM.h"
 
 
-#define PROGRAM_VERSION  "0.75"
+#define PROGRAM_VERSION  "0.76"
 
 // Function prototype
 static void buttonThread();
@@ -948,7 +948,7 @@ void loop()
             ((gParams.lightSleepExitTime == 0) || ((millis() - gParams.lightSleepExitTime) > gParams.awakenTimePeriod))) // Wait 5s after awaken from the button before going to sleep.
     {
         esp_sleep_wakeup_cause_t cause;
-        uint64_t sleepTime = 200;
+        uint64_t sleepTime = ((gParams.locationFromGPS == false) ? 800 : 200);
 
         setCpuFrequencyMhz(20);
         cause = execLightSleep(sleepTime);
