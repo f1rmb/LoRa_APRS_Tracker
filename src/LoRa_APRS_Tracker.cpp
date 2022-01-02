@@ -21,7 +21,7 @@
 #include "Deg2DDMMMM.h"
 
 
-#define PROGRAM_VERSION  "0.73"
+#define PROGRAM_VERSION  "0.74"
 
 // Function prototype
 static void buttonThread();
@@ -547,7 +547,7 @@ void loop()
                 {
                     gParams.sendPositionUpdate = true;
 
-                    if (bcm.getCurrentBeaconConfig()->smart_beacon.active)
+                    if (gParams.locationFromGPS && bcm.getCurrentBeaconConfig()->smart_beacon.active)
                     {
                         gParams.currentHeading = currentHeading;
                         // enforce message text on slowest smart_beacon.slow_rate
@@ -566,7 +566,7 @@ void loop()
         }
 
         // Smart beaconing, with GPS Fix
-        if ((gParams.sendPositionUpdate == false) && gpsHasFix && bcm.getCurrentBeaconConfig()->smart_beacon.active)
+        if ((gParams.sendPositionUpdate == false) && gpsHasFix && (gParams.locationFromGPS && bcm.getCurrentBeaconConfig()->smart_beacon.active))
         {
             uint32_t lastTx = (millis() - gParams.lastTxTime);
 
@@ -628,7 +628,7 @@ void loop()
             char               longBuf[32];
 
             gParams.sendPositionUpdate = false;
-            gParams.nextBeaconTimeStamp = now() + (bcm.getCurrentBeaconConfig()->smart_beacon.active ?
+            gParams.nextBeaconTimeStamp = now() + ((gParams.locationFromGPS && bcm.getCurrentBeaconConfig()->smart_beacon.active) ?
                     bcm.getCurrentBeaconConfig()->smart_beacon.slow_rate : (bcm.getCurrentBeaconConfig()->timeout * SECS_PER_MIN));
 
             msgAprs.setSource(bcm.getCurrentBeaconConfig()->callsign);
@@ -764,7 +764,7 @@ void loop()
                 gParams.sendPositionUpdate = true; // Try to resend on the next run
             }
 
-            if (bcm.getCurrentBeaconConfig()->smart_beacon.active)
+            if (gParams.locationFromGPS && bcm.getCurrentBeaconConfig()->smart_beacon.active)
             {
                 gParams.lastTxLat       = currentLat;
                 gParams.lastTxLong      = currentLong;
@@ -785,9 +785,9 @@ void loop()
         oled.Display(bcm.getCurrentBeaconConfig()->callsign,
                 formatToDateString(n) + " " + formatToTimeString(n),
                 String("Sats: ") + (posIsValid ? (gParams.locationFromGPS ? String(gParams.lastValidGPS.satellites) : "F" ) : "-") + " HDOP: " + (posIsValid ? String(gParams.lastValidGPS.hdop) : "--.--"),
-                String("Nxt Bcn: ") + (posIsValid ? (bcm.getCurrentBeaconConfig()->smart_beacon.active ? "~" : "") + formatToTimeString(gParams.nextBeaconTimeStamp) : "--:--:--"),
+                String("Nxt Bcn: ") + (posIsValid ? ((gParams.locationFromGPS && bcm.getCurrentBeaconConfig()->smart_beacon.active) ? "~" : "") + formatToTimeString(gParams.nextBeaconTimeStamp) : "--:--:--"),
                 (gParams.batteryIsConnected ? (String("Bat: ") + gParams.batteryVoltage + "V, " + gParams.batteryChargeCurrent + "mA") : "Powered via USB"),
-                String("S-Beacon: " + getOnOff(bcm.getCurrentBeaconConfig()->smart_beacon.active)) + ", " + String((gParams.outputPowerWatt * 1e3), 0) + "mW");
+                String("S-Beacon: " + getOnOff(gParams.locationFromGPS && bcm.getCurrentBeaconConfig()->smart_beacon.active)) + ", " + String((gParams.outputPowerWatt * 1e3), 0) + "mW");
 
 #if 0
         Serial.println(String("Sats: ") + String(gParams.lastValidGPS.satellites) + " HDOP: " + gParams.lastValidGPS.hdop +
@@ -804,7 +804,7 @@ void loop()
         // Beacon's TX interval adjustement
         if (timeIsValid)
         {
-            if (bcm.getCurrentBeaconConfig()->smart_beacon.active)
+            if (gParams.locationFromGPS && bcm.getCurrentBeaconConfig()->smart_beacon.active)
             {
                 // Change the Tx internal based on the current speed
                 int currentSpeed = int((currentSpeedKnot / 1.9438444924));
