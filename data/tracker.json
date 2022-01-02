@@ -5,6 +5,7 @@
 			"callsign": "NOCALL-7",
 			"path": "WIDE1-1",
 			"message": "LoRa Tracker",
+			"add_power": true,
 			"timeout": 1,
 			"symbol": "[",
 			"overlay": "/",

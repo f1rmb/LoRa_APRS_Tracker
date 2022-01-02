@@ -74,6 +74,7 @@ Configuration ConfigurationManagement::readConfiguration()
             beacon.message              = v["message"].as<String>();
         }
 
+        beacon.add_power                = v["add_power"] | true;
         beacon.timeout = v["timeout"] | 1;
 
         if (v.containsKey("symbol"))
@@ -194,6 +195,7 @@ void ConfigurationManagement::writeConfiguration(Configuration conf)
         v["callsign"]                    = beacon.callsign;
         v["path"]                        = beacon.path;
         v["message"]                     = beacon.message;
+        v["add_power"]                   = beacon.add_power;
         v["timeout"]                     = beacon.timeout;
         v["symbol"]                      = beacon.symbol;
         v["overlay"]                     = beacon.overlay;

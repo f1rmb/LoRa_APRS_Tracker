@@ -43,6 +43,7 @@ class Configuration
                     callsign("NOCALL-10"),
                     path("WIDE1-1"),
                     message("LoRa Tracker"),
+                    add_power(true),
                     timeout(1),
                     symbol("["),
                     overlay("/"),
@@ -53,6 +54,7 @@ class Configuration
                 String       callsign;
                 String       path;
                 String       message;
+                bool         add_power;
                 uint32_t     timeout;
                 String       symbol;
                 String       overlay;
@@ -75,7 +77,7 @@ class Configuration
 
                 unsigned long frequencyRx;
                 unsigned long frequencyTx;
-                uint32_t      power;
+                int32_t       power;
                 uint32_t      spreadingFactor;
                 unsigned long signalBandwidth;
                 uint32_t      codingRate4;

@@ -21,7 +21,7 @@
 #include "Deg2DDMMMM.h"
 
 
-#define PROGRAM_VERSION  "0.72"
+#define PROGRAM_VERSION  "0.73"
 
 // Function prototype
 static void buttonThread();
@@ -102,6 +102,8 @@ struct GlobalParameters
             locationFromGPS(true),
             forceScreenRefresh(false),
             waitForNextPVT(true),
+            outputPowerdBm(-30),
+            outputPowerWatt(0.001),
 #ifdef TTGO_T_Beam_V1_0
             batteryLastCheckTime(0),
 #endif
@@ -120,6 +122,12 @@ struct GlobalParameters
         {
             m_displayTimeout = timeout;
             m_displayTimeoutEnabled = (timeout > 0); // If timeout is set to 0ms, disable it
+        }
+
+        void SetOutputPower(int32_t dBm)
+        {
+            outputPowerdBm = dBm;
+            outputPowerWatt = pow(10.0, (dBm - 30.0) / 10.0);
         }
 
         void ResetDisplayTimeout()
@@ -174,6 +182,8 @@ struct GlobalParameters
         bool           locationFromGPS;
         bool           forceScreenRefresh;
         bool           waitForNextPVT;
+        int32_t        outputPowerdBm;
+        double         outputPowerWatt;
 #ifdef TTGO_T_Beam_V1_0
         unsigned long  batteryLastCheckTime;
 #endif
@@ -399,6 +409,7 @@ void setup()
     }
 
     gParams.SetDisplayTimeout(cfg.display.timeout);
+    gParams.SetOutputPower(cfg.lora.power);
 
     // make sure wifi and bt are off as we don't need it:
     WiFi.mode(WIFI_OFF);
@@ -699,6 +710,18 @@ void loop()
             if (gParams.batteryIsConnected)
             {
                 aprsmsgStr += " -  _Bat.: " + gParams.batteryVoltage + "V - Cur.: " + gParams.batteryChargeCurrent + "mA";
+
+                if (bcm.getCurrentBeaconConfig()->add_power)
+                {
+                    aprsmsgStr += " - Pwr: " + String((gParams.outputPowerWatt * 1e3), 0) + "mW";
+                }
+            }
+            else
+            {
+                if (bcm.getCurrentBeaconConfig()->add_power)
+                {
+                    aprsmsgStr += " - Pwr: " + String((gParams.outputPowerWatt * 1e3), 0) + "mW";
+                }
             }
 
 
@@ -764,7 +787,7 @@ void loop()
                 String("Sats: ") + (posIsValid ? (gParams.locationFromGPS ? String(gParams.lastValidGPS.satellites) : "F" ) : "-") + " HDOP: " + (posIsValid ? String(gParams.lastValidGPS.hdop) : "--.--"),
                 String("Nxt Bcn: ") + (posIsValid ? (bcm.getCurrentBeaconConfig()->smart_beacon.active ? "~" : "") + formatToTimeString(gParams.nextBeaconTimeStamp) : "--:--:--"),
                 (gParams.batteryIsConnected ? (String("Bat: ") + gParams.batteryVoltage + "V, " + gParams.batteryChargeCurrent + "mA") : "Powered via USB"),
-                String("Smart Beacon: " + getOnOff(bcm.getCurrentBeaconConfig()->smart_beacon.active)));
+                String("S-Beacon: " + getOnOff(bcm.getCurrentBeaconConfig()->smart_beacon.active)) + ", " + String((gParams.outputPowerWatt * 1e3), 0) + "mW");
 
 #if 0
         Serial.println(String("Sats: ") + String(gParams.lastValidGPS.satellites) + " HDOP: " + gParams.lastValidGPS.hdop +
