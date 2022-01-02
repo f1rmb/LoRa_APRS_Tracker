@@ -51,6 +51,7 @@
 	"display": {
 		"invert": false,
 		"rotation": 0,
+		"contrast": 207,
 		"timeout": 10000
 	}
 }

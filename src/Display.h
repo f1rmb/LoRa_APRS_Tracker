@@ -15,7 +15,8 @@ class OLEDDisplay
         OLEDDisplay();
         ~OLEDDisplay();
 
-        void Init(bool invert, uint8_t rotation);
+        void Init(bool invert, uint8_t rotation, uint8_t contrast);
+        void setContrast(uint8_t contrast);
 
 #if defined(USE_BOOTSCREEN)
         void ShowBootscreen(const String &version, uint16_t x, uint16_t y, uint16_t textcolor, uint32_t msPause = 0);
@@ -39,5 +40,6 @@ class OLEDDisplay
         Adafruit_SSD1306   m_display;
         bool               m_isInitialized;
         bool               m_isActivated;
+        uint8_t            m_contrast;
 };
 #endif

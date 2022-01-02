@@ -128,12 +128,14 @@ class Configuration
                 Display() :
                     invert(false),
                     rotation(0), // 0 .. 3
+                    contrast(0xCF),
                     timeout(CONFIGURATION_DISPLAY_TIMEOUT)
                 {
                 }
 
                 bool     invert;
                 uint8_t  rotation;
+                uint8_t  contrast;
                 uint32_t timeout;
 
         };

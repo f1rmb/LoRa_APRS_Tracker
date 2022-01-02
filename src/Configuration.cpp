@@ -167,6 +167,7 @@ Configuration ConfigurationManagement::readConfiguration()
     {
         conf.display.invert             = data["display"]["invert"] | false;
         conf.display.rotation           = data["display"]["rotation"] | 0;
+        conf.display.contrast           = data["display"]["contrast"] | 0xCF;
         conf.display.timeout            = data["display"]["timeout"] | Configuration::CONFIGURATION_DISPLAY_TIMEOUT;
     }
 
@@ -236,6 +237,7 @@ void ConfigurationManagement::writeConfiguration(Configuration conf)
 
     data["display"]["invert"]           = conf.display.invert;
     data["display"]["rotation"]         = conf.display.rotation;
+    data["display"]["contrast"]         = conf.display.contrast;
     data["display"]["timeout"]          = conf.display.timeout;
 
     serializeJson(data, file);

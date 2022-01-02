@@ -103,7 +103,8 @@ static const uint8_t bootscreen[] = {
 OLEDDisplay::OLEDDisplay() :
         m_display(128, 64, &Wire, OLED_RST),
         m_isInitialized(false),
-        m_isActivated(false)
+        m_isActivated(false),
+        m_contrast(0xCF)
 {
     for (size_t i = 0; i < (sizeof(currentStrings) / sizeof(currentStrings[0])); i++)
     {
@@ -116,8 +117,10 @@ OLEDDisplay::~OLEDDisplay()
 }
 
 // cppcheck-suppress unusedFunction
-void OLEDDisplay::Init(bool invert, uint8_t rotation)
+void OLEDDisplay::Init(bool invert, uint8_t rotation, uint8_t contrast)
 {
+    m_contrast = contrast;
+
     pinMode(OLED_RST, OUTPUT);
     digitalWrite(OLED_RST, LOW);
     delay(20);
@@ -138,10 +141,17 @@ void OLEDDisplay::Init(bool invert, uint8_t rotation)
     m_display.setCursor(0, 0);
     m_display.print("LoRa APRS Tracker");
     m_display.ssd1306_command(SSD1306_SETCONTRAST);
-    m_display.ssd1306_command(1);
+    m_display.ssd1306_command(m_contrast);
     m_display.display();
     m_isInitialized = true;
     m_isActivated = true;
+}
+
+void OLEDDisplay::setContrast(uint8_t contrast)
+{
+    m_contrast = contrast;
+    m_display.ssd1306_command(SSD1306_SETCONTRAST);
+    m_display.ssd1306_command(m_contrast);
 }
 
 #if defined(USE_BOOTSCREEN)
@@ -160,7 +170,7 @@ void OLEDDisplay::ShowBootscreen(const String &version, uint16_t x, uint16_t y, 
     m_display.print(version);
 
     m_display.ssd1306_command(SSD1306_SETCONTRAST);
-    m_display.ssd1306_command(1);
+    m_display.ssd1306_command(m_contrast);
     m_display.display();
 
     delay(msPause);
@@ -223,7 +233,7 @@ void OLEDDisplay::displayLines(const String &header, const String &line1, const 
         }
 
         m_display.ssd1306_command(SSD1306_SETCONTRAST);
-        m_display.ssd1306_command(1);
+        m_display.ssd1306_command(m_contrast);
         m_display.display();
 
         delay(msPause);
@@ -290,4 +300,3 @@ bool OLEDDisplay::IsActivated()
 {
     return (m_isInitialized && m_isActivated);
 }
-

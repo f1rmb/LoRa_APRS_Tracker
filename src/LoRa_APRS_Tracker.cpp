@@ -21,7 +21,7 @@
 #include "Deg2DDMMMM.h"
 
 
-#define PROGRAM_VERSION  "0.71"
+#define PROGRAM_VERSION  "0.72"
 
 // Function prototype
 static void buttonThread();
@@ -370,7 +370,7 @@ void setup()
 
     loadConfiguration();
 
-    oled.Init(cfg.display.invert, cfg.display.rotation);
+    oled.Init(cfg.display.invert, cfg.display.rotation, cfg.display.contrast);
 
 #if defined(USE_BOOTSCREEN)
     oled.ShowBootscreen("v" + String(PROGRAM_VERSION), 98, 56, BLACK, 4000);
