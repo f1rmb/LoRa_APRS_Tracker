@@ -127,17 +127,24 @@ Configuration ConfigurationManagement::readConfiguration()
 
     if (data.containsKey("location"))
     {
-        // JSON to double looses precision, hence use sscanf()
-        if (toDouble(data["location"]["latitude"].as<String>(), &conf.location.latitude) == false)
+        // JSON to double loses precision, hence use sscanf()
+        if (data["location"].containsKey("latitude"))
         {
-            conf.location.latitude      = data["location"]["latitude"];
+            if (toDouble(data["location"]["latitude"].as<String>(), &conf.location.latitude) == false)
+            {
+                conf.location.latitude      = data["location"]["latitude"];
+            }
         }
 
-        // JSON to double looses precision, hence use sscanf()
-        if (toDouble(data["location"]["longitude"].as<String>(), &conf.location.longitude) == false)
+        // JSON to double loses precision, hence use sscanf()
+        if (data["location"].containsKey("longitude"))
         {
-            conf.location.longitude     = data["location"]["longitude"];
+            if (toDouble(data["location"]["longitude"].as<String>(), &conf.location.longitude) == false)
+            {
+                conf.location.longitude     = data["location"]["longitude"];
+            }
         }
+
         conf.location.altitude          = data["location"]["altitude"];
 
         if (data["location"].containsKey("symbol"))

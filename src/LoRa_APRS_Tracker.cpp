@@ -21,7 +21,7 @@
 #include "Deg2DDMMMM.h"
 
 
-#define PROGRAM_VERSION  "0.70"
+#define PROGRAM_VERSION  "0.71"
 
 // Function prototype
 static void buttonThread();
@@ -878,7 +878,7 @@ void loop()
 #ifdef TTGO_T_Beam_V1_0
                         // It takes too long to initialize the GNSS, hence
                         // disable the watchdog while the process is running
-                        // prevent it to kicks in
+                        // prevents it to kicks in
                         rtc_wdt_disable();
                         pm.GPSActivate();
                         delay(5000);
