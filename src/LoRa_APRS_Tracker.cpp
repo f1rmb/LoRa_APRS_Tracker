@@ -21,7 +21,7 @@
 #include "Deg2DDMMMM.h"
 
 
-#define PROGRAM_VERSION  "0.76"
+#define PROGRAM_VERSION  "0.77"
 
 // Function prototype
 static void buttonThread();
@@ -862,9 +862,22 @@ void loop()
 
         time_t n = now();
         bool posIsValid = gParams.lastValidGPS.PositionIsValid();
+        String hdopStr = (posIsValid ? String(gParams.lastValidGPS.hdop) : "--.--");
+        static bool blink = false;
+
+        if (gParams.locationFromGPS && gpsFix)
+        {
+            if (blink)
+            {
+                hdopStr += ((hdopStr.length() == 5) ? " *" : "  *");
+            }
+
+            blink = !blink;
+        }
+
         oled.Display(bcm.getCurrentBeaconConfig()->callsign,
                 formatToDateString(n) + " " + formatToTimeString(n),
-                String("Sats: ") + (posIsValid ? (gParams.locationFromGPS ? String(gParams.lastValidGPS.satellites) : "F" ) : "-") + " HDOP: " + (posIsValid ? String(gParams.lastValidGPS.hdop) : "--.--"),
+                String("Sats: ") + (posIsValid ? (gParams.locationFromGPS ? String(gParams.lastValidGPS.satellites) : "F" ) : "-") + " HDOP: " + hdopStr,
                 String("Nxt Bcn: ") + (posIsValid ? ((gParams.locationFromGPS && bcm.getCurrentBeaconConfig()->smart_beacon.active) ? "~" : "") + formatToTimeString(gParams.nextBeaconTimeStamp) : "--:--:--"),
                 (gParams.batteryIsConnected ? (String("Bat: ") + gParams.batteryVoltage + "V, " + gParams.batteryChargeCurrent + "mA") : "Powered via USB"),
                 String("S-Beacon: " + getOnOff(gParams.locationFromGPS && bcm.getCurrentBeaconConfig()->smart_beacon.active)) + ", " + String((gParams.outputPowerWatt * 1e3), 0) + "mW");
