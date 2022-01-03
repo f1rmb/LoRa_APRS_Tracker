@@ -39,13 +39,13 @@ static GPSDevice         gps;
 struct GlobalParameters
 {
     private:
-        struct GPSPosHDOP
+        struct GPSInformations
         {
-            GPSPosHDOP()
+            GPSInformations()
             {
                 Reset();
             }
-            ~GPSPosHDOP() { }
+            ~GPSInformations() { }
 
             void Reset()
             {
@@ -66,6 +66,64 @@ struct GlobalParameters
             double altitude; // in feet
             double hdop;
             uint8_t satellites;
+        };
+
+        struct GPSState
+        {
+                GPSState() :
+                    hasFix(false),
+                    fixCount(0)
+                {
+
+                }
+
+                void Reset()
+                {
+                    hasFix = false;
+                    fixCount = 0;
+                }
+
+                void Tick(bool gpsFixState)
+                {
+                    if (gpsFixState)
+                    {
+                        if (hasFix == false)
+                        {
+                            fixCount++;
+
+                            if (fixCount == 3)
+                            {
+                                hasFix = true;
+                                gps.SetPowerSaving(true);
+                            }
+                        }
+                        else
+                        {
+                            if (fixCount < 3)
+                            {
+                                fixCount++;
+                            }
+                        }
+                    }
+                    else
+                    {
+                        if (fixCount > 0)
+                        {
+                            fixCount--;
+
+                            if (fixCount == 0)
+                            {
+                                hasFix = false;
+                                gps.SetPowerSaving(false);
+                            }
+                        }
+                    }
+                }
+
+                bool           hasFix;
+
+            private:
+                uint32_t       fixCount;
         };
 
     public:
@@ -101,7 +159,6 @@ struct GlobalParameters
             btnClicks(GlobalParameters::BUTTON_CLICKED_NONE),
             locationFromGPS(true),
             forceScreenRefresh(false),
-            waitForNextPVT(true),
             outputPowerdBm(-30),
             outputPowerWatt(0.001),
 #ifdef TTGO_T_Beam_V1_0
@@ -160,39 +217,39 @@ struct GlobalParameters
             }
         }
 
-        bool           hasStarted;
-        bool           sendPositionUpdate;
-        time_t         nextBeaconTimeStamp;
-        double         currentHeading;
-        double         previousHeading;
-        uint32_t       rateLimitMessageText;
-        double         lastTxLat;
-        double         lastTxLong;
-        int32_t        lastTxDistance;
-        uint32_t       txInterval;
-        unsigned long  lastTxTime;
-        int            speedZeroSent;
-        bool           batteryIsConnected;
-        String         batteryVoltage;
-        String         batteryChargeCurrent;
-        unsigned long  lastUpdateTime;
-        unsigned long  lightSleepExitTime;
-        unsigned long  awakenTimePeriod;
-        BUTTON_CLICKED btnClicks;
-        bool           locationFromGPS;
-        bool           forceScreenRefresh;
-        bool           waitForNextPVT;
-        int32_t        outputPowerdBm;
-        double         outputPowerWatt;
+        bool             hasStarted;
+        bool             sendPositionUpdate;
+        time_t           nextBeaconTimeStamp;
+        double           currentHeading;
+        double           previousHeading;
+        uint32_t         rateLimitMessageText;
+        double           lastTxLat;
+        double           lastTxLong;
+        int32_t          lastTxDistance;
+        uint32_t         txInterval;
+        unsigned long    lastTxTime;
+        int              speedZeroSent;
+        bool             batteryIsConnected;
+        String           batteryVoltage;
+        String           batteryChargeCurrent;
+        unsigned long    lastUpdateTime;
+        unsigned long    lightSleepExitTime;
+        unsigned long    awakenTimePeriod;
+        BUTTON_CLICKED   btnClicks;
+        bool             locationFromGPS;
+        bool             forceScreenRefresh;
+        int32_t          outputPowerdBm;
+        double           outputPowerWatt;
 #ifdef TTGO_T_Beam_V1_0
-        unsigned long  batteryLastCheckTime;
+        unsigned long    batteryLastCheckTime;
 #endif
-        GPSPosHDOP     lastValidGPS;
+        GPSInformations  lastValidGPS;
+        GPSState         gpsState;
 
     private:
-        uint32_t       m_displayTimeout;
-        unsigned long  m_displayLastTimeout;
-        bool           m_displayTimeoutEnabled;
+        uint32_t         m_displayTimeout;
+        unsigned long    m_displayLastTimeout;
+        bool             m_displayTimeoutEnabled;
 };
 
 static GlobalParameters gParams;
@@ -312,6 +369,7 @@ static esp_sleep_wakeup_cause_t execLightSleep(uint64_t sleepMS)
 
     gpio_wakeup_enable((gpio_num_t)BUTTON_PIN, GPIO_INTR_LOW_LEVEL);
 
+#if 0
     // enable or disable INT for GPS TX pin.
     if (gParams.locationFromGPS)
     {
@@ -321,6 +379,7 @@ static esp_sleep_wakeup_cause_t execLightSleep(uint64_t sleepMS)
     {
         gpio_wakeup_disable((gpio_num_t)GPS_TX);
     }
+#endif
 
     assert(esp_sleep_enable_gpio_wakeup() == ESP_OK);
     assert(esp_sleep_enable_timer_wakeup(sleepUS) == ESP_OK);
@@ -468,8 +527,9 @@ void loop()
         gps.Tick();
 
         // We didn't had a PVT packet in the last 10s, flush the GNSS module (it stops sending packets after a loss of the fix)
-        if (gParams.waitForNextPVT && (gpsHasPVT == false) && ((millis() - gParams.lastUpdateTime) > 10000))
+        if ((gpsHasPVT == false) && ((millis() - gParams.lastUpdateTime) > 10000))
         {
+            gParams.gpsState.Reset();
             gps.FlushAndSetAutoPVT();
             forceEntering = true; // Update the screen
             gParams.lastUpdateTime = millis(); // update last action time
@@ -477,19 +537,34 @@ void loop()
     }
     else
     {
-        // force each 2 secs updates when the GNSS is OFF
-        forceEntering = ((millis() - gParams.lastUpdateTime) >= 2000);
+        // force updates every seconds when the GNSS is OFF
+        forceEntering = ((millis() - gParams.lastUpdateTime) >= 1000);
     }
+
+#if 0
+    while (Serial.available())
+    {
+        char c = Serial.read();
+
+        if (c == 'T')
+        {
+            Serial.println("TOGGLE GPS ***************");
+            gParams.ResetDisplayTimeout();
+            gParams.btnClicks = GlobalParameters::BUTTON_CLICKED_MULTI;
+            //forceEntering = true;
+        }
+        else if (c == 'R')
+        {
+            Serial.println("REBOOT ***************");
+            ESP.restart();
+        }
+    }
+#endif
 
     if (gpsHasPVT || forceEntering || gParams.forceScreenRefresh)
     {
         gParams.lastUpdateTime = millis();
         gParams.forceScreenRefresh = false;
-
-        if (gpsHasPVT || (gParams.locationFromGPS == false)) // We got the expected PVT packet (or expecting when the GNSS is off)
-        {
-            gParams.waitForNextPVT = false;
-        }
 
         bool     gpsPVT             = gpsHasPVT;
         bool     gpsFix             = gParams.locationFromGPS ? false : true;
@@ -507,6 +582,12 @@ void loop()
             gParams.lastValidGPS.Reset();
         }
 
+        // Handles fix state and GNSS powersaving mode
+        if (gParams.locationFromGPS)
+        {
+            gParams.gpsState.Tick(gpsHasFix);
+        }
+
         if (gpsHasFix)
         {
             if (gParams.locationFromGPS)
@@ -518,7 +599,6 @@ void loop()
                 gParams.lastValidGPS.altitude = currentAltInFeet = gps.GetAltitudeFT();
                 currentHeading                                   = gps.GetHeading();
                 currentSpeedKnot                                 = gps.GetSpeedKT();
-
             }
             else
             {
@@ -798,7 +878,6 @@ void loop()
 #else
         //Serial.println(String("Sats: ") + (posIsValid ? String(gParams.lastValidGPS.satellites) : "-") + " HDOP: " + (posIsValid ? String(gParams.lastValidGPS.hdop) : "--.--"));
         //Serial.println(String("Nxt Bcn: ") + (posIsValid ? (bcm.getCurrentBeaconConfig()->smart_beacon.active ? "~" : "") + formatToTimeString(gParams.nextBeaconTimeStamp) : "--:--:--"));
-
 #endif
 
         // Beacon's TX interval adjustement
@@ -848,12 +927,10 @@ void loop()
             switch (gParams.btnClicks)
             {
                 case GlobalParameters::BUTTON_CLICKED_ONCE:
+                    // Send a frame if the screen is already lit.
+                    if (cfg.button.tx)
                     {
-                        // Send a frame if the screen is already lit.
-                        if (cfg.button.tx)
-                        {
-                            gParams.sendPositionUpdate = true;
-                        }
+                        gParams.sendPositionUpdate = true;
                     }
                     break;
 
@@ -893,6 +970,9 @@ void loop()
                         gps.Stop();
                         pm.GPSDeactivate();
 #endif
+#ifdef TTGO_T_Beam_V0_7
+                        gps.SetPowerOff(true, 0);
+#endif
                         delay(2000);
                     }
                     else
@@ -913,12 +993,16 @@ void loop()
                         rtc_wdt_enable(); // All done, reenable the WDT.
                         rtc_wdt_protect_on();
 #endif
+#ifdef TTGO_T_Beam_V0_7
+                        gps.SetPowerOff(false, 0);
+                        gps.FlushAndSetAutoPVT();
+#endif
                         gParams.lastValidGPS.Reset();
                         gps.Tick();
+                        gParams.gpsState.Reset();
                     }
                     gParams.locationFromGPS = !gParams.locationFromGPS;
                     gParams.forceScreenRefresh = true;
-                    gParams.waitForNextPVT = true;
                     break;
 
                 case GlobalParameters::BUTTON_CLICKED_LONGPRESS:
@@ -930,7 +1014,7 @@ void loop()
                     }
                     break;
 
-                 default:
+                default:
                     break;
             }
 
@@ -940,20 +1024,18 @@ void loop()
         gParams.btnClicks = GlobalParameters::BUTTON_CLICKED_NONE;
     }
 
-
     // ESP32 Light Sleep
     if (userBtn.isIdle() && (gParams.forceScreenRefresh == false) && // Button is idling, no refresh screen is pending
-            ((gParams.locationFromGPS == false) || (gParams.locationFromGPS && ((ss.available() == false) && (gParams.waitForNextPVT == false)))) && // Not GPS UART activity expected
+            (gParams.locationFromGPS == false) && // GNSS is OFF
             ((gParams.GetDisplayTimeout() == 0) || (oled.IsActivated() == false)) && // Screen is OFF (if timeout is set)
             ((gParams.lightSleepExitTime == 0) || ((millis() - gParams.lightSleepExitTime) > gParams.awakenTimePeriod))) // Wait 5s after awaken from the button before going to sleep.
     {
         esp_sleep_wakeup_cause_t cause;
-        uint64_t sleepTime = ((gParams.locationFromGPS == false) ? 800 : 200);
+        uint64_t sleepTime = 800;
 
         setCpuFrequencyMhz(20);
         cause = execLightSleep(sleepTime);
         setCpuFrequencyMhz(80);
-
 
         switch (cause)
         {
@@ -969,23 +1051,11 @@ void loop()
                 //gParams.ResetDisplayTimeout(); // fallthrough
             default:
             {
-                if (digitalRead(BUTTON_PIN) == LOW)
-                {
-                    gParams.awakenTimePeriod = ((cfg.display.timeout > 0) ? cfg.display.timeout : 2000);
-                }
-                else
-                {
-                    if (gParams.locationFromGPS)
-                    {
-                        gps.Tick();
-                    }
-                    gParams.awakenTimePeriod = 200; // 200ms
-                }
+                gParams.awakenTimePeriod = ((cfg.display.timeout > 0) ? cfg.display.timeout : 2000);
             }
             break;
         }
 
-        gParams.waitForNextPVT = true;
         gParams.lightSleepExitTime = millis();
     }
 }

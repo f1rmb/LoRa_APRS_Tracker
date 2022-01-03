@@ -48,13 +48,19 @@ class GPSDevice
 
         // Flush the current PVT packets, then re-enable the AutoPVT
         bool          FlushAndSetAutoPVT();
+        bool          Flush();
 
 
         // Get GPS time (unix format), if valid.
         bool          GetDateAndTime(struct tm &t);
 
+        bool          SetPowerOff(bool off, uint32_t duration);
+        bool          SetPowerSaving(bool on);
+
+
         // Get PowerSaving status
         uint8_t       IsPowerSaving();
+
 
         // Get various GPS informations (call GetPVT() first)
         double        GetHeading();     // in Degrees
@@ -76,13 +82,13 @@ class GPSDevice
     private:
         bool connect();
         bool setUBXMode();
-        bool configurePowerSaving();
 
     private:
         HardwareSerial       *m_serialGPS;
         bool                  m_isConnected;
         SFE_UBLOX_GNSS        m_gnss;
         SFE_UBLOX_GNSS_TYPE   m_gnssType;
+        bool                  m_isPowerSaving;
 };
 
 

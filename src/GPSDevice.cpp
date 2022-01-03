@@ -8,7 +8,8 @@
 GPSDevice::GPSDevice() :
 m_serialGPS(NULL),
 m_isConnected(false),
-m_gnssType(SFE_UBLOX_GNSS_TYPE::GNSS_TYPE_OTHER)
+m_gnssType(SFE_UBLOX_GNSS_TYPE::GNSS_TYPE_OTHER),
+m_isPowerSaving(false)
 {
 }
 
@@ -29,7 +30,7 @@ bool GPSDevice::Initialize(HardwareSerial &serial)
 
     for (int i = 0; (i < 3) && !connect(); i++)
     {
-         delay(500);
+        delay(500);
     }
 
     if (m_isConnected)
@@ -90,6 +91,7 @@ bool GPSDevice::FactoryReset()
     if (m_serialGPS && m_isConnected)
     {
         m_gnss.flushPVT();
+        m_gnss.flushDOP();
         m_gnss.factoryReset();
     }
 
@@ -98,7 +100,7 @@ bool GPSDevice::FactoryReset()
 
     for (int i = 0; (i < 3) && !connect(); i++)
     {
-         delay(500);
+        delay(500);
     }
 
     if (m_isConnected)
@@ -137,6 +139,38 @@ bool GPSDevice::Tick()
     if (m_serialGPS && m_isConnected)
     {
         return (m_gnss.checkUblox());
+    }
+
+    return false;
+}
+
+bool GPSDevice::SetPowerOff(bool off, uint32_t duration)
+{
+    if (m_serialGPS && m_isConnected)
+    {
+        if (off)
+        {
+            return (m_gnss.powerOff(duration, 2000));
+        }
+        else
+        {
+            m_gnss.softwareResetGNSSOnly();
+            return true;
+        }
+    }
+
+    return false;
+}
+
+bool GPSDevice::SetPowerSaving(bool on)
+{
+    if (m_serialGPS && m_isConnected)
+    {
+        if (m_isPowerSaving != on)
+        {
+            m_isPowerSaving = on;
+            return (m_gnss.powerSaveMode(on, 2000U));
+        }
     }
 
     return false;
@@ -208,15 +242,32 @@ bool GPSDevice::FlushAndSetAutoPVT()
 {
     if (m_serialGPS && m_isConnected)
     {
+        m_gnss.setAutoPVT(false, uint16_t(2000));
+        m_gnss.setAutoDOP(false, uint16_t(2000));
         m_gnss.flushPVT();
+        m_gnss.flushDOP();
 
-        if (m_gnss.setNavigationFrequency(1, 2000) && m_gnss.setAutoPVT(true, uint16_t(2000)))
+        if (m_gnss.setNavigationFrequency(1, 2000) && m_gnss.setAutoPVT(true, uint16_t(2000)) && m_gnss.setAutoDOP(true, uint16_t(2000)))
         {
-            bool ret = configurePowerSaving(); // Enable GNSS PowerSaving
+            m_gnss.powerSaveMode(false, 2000U);
+            m_isPowerSaving = false;
 
-            return ret;
+            return true;
         }
     }
+    return false;
+}
+
+bool GPSDevice::Flush()
+{
+    if (m_serialGPS && m_isConnected)
+    {
+        m_serialGPS->flush();
+        m_gnss.flushPVT();
+        m_gnss.flushDOP();
+        return true;
+    }
+
     return false;
 }
 
@@ -391,21 +442,10 @@ bool GPSDevice::setUBXMode()
             // Detect and force Neo-6M mode
             m_gnss.setGNSSType((m_gnssType = m_gnss.getModuleType(2000)));
 
-            bool ret = FlushAndSetAutoPVT();
-
-            return ret;
+            return (FlushAndSetAutoPVT());
         }
     }
 
     return false;
 }
 
-bool GPSDevice::configurePowerSaving()
-{
-    if (m_serialGPS && m_isConnected)
-    {
-        return (m_gnss.powerSaveMode(true, 2000U));
-    }
-
-    return false;
-}
