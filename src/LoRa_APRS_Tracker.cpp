@@ -21,7 +21,7 @@
 #include "Deg2DDMMMM.h"
 
 
-#define PROGRAM_VERSION  "0.77"
+#define PROGRAM_VERSION  "0.78"
 
 // Function prototype
 static void buttonThread();
