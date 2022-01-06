@@ -254,7 +254,7 @@ struct GlobalParameters
 
 static GlobalParameters gParams;
 
-std::thread counter_loop_thread(buttonThread);
+std::thread buttonLoopThread(buttonThread);
 
 // OneButton's callbacks (not doing much, as they are called withing a thread)
 static void buttonClickCallback()
@@ -298,6 +298,7 @@ static void gpsInitialize()
         ESP.restart(); // Reboot
 #else
         oled.Display(" GPS INIT", emptyString, "Initialization Failed", " Please power cycle. ");
+        setCpuFrequencyMhz(10);
         while (true) { delay(10); }
 #endif
     }
@@ -317,6 +318,7 @@ static void loraInitialize()
         DlogPrintlnE("LoRa Init Failed!");
         oled.Display(" LoRa INIT", emptyString, "Initialization Failed", " Please power cycle. ");
 
+        setCpuFrequencyMhz(10);
         while (true) { delay(10); }
     }
 
@@ -455,6 +457,7 @@ void setup()
         oled.Display("  ERROR!", "You have to change your settings in 'data/tracker.json' and "
                 "upload it via \"Upload File System image\"!");
 
+        setCpuFrequencyMhz(10);
         while (true) { delay(10); }
     }
 
@@ -510,6 +513,7 @@ void setup()
 
     gParams.ResetDisplayTimeout(); // Enable OLED timeout
     gParams.hasStarted = true; // main loop will start, unlock the userButton thread
+    setCpuFrequencyMhz(20);
 }
 
 // cppcheck-suppress unusedFunction
@@ -1046,9 +1050,9 @@ void loop()
         esp_sleep_wakeup_cause_t cause;
         uint64_t sleepTime = 800;
 
-        setCpuFrequencyMhz(20);
+        setCpuFrequencyMhz(10);
         cause = execLightSleep(sleepTime);
-        setCpuFrequencyMhz(80);
+        setCpuFrequencyMhz(20);
 
         switch (cause)
         {
