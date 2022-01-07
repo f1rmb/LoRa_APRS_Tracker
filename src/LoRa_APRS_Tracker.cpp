@@ -20,11 +20,22 @@
 #include "BeaconManager.h"
 #include "Deg2DDMMMM.h"
 
+#define MCU_FREQ_ASLEEP       10U // 10MHz
+#define MCU_FREQ_AWAKE        20U // 20MHz
+#define MCU_FREQ_AWAKE_NEO6   40U // Needs more processing
 
-#define PROGRAM_VERSION  "0.78"
+#define PROGRAM_VERSION  "0.79"
+
 
 // Function prototype
 static void buttonThread();
+
+
+static const unsigned long millisAfterPvtToEnterSleep[2][2] =
+{
+        {  25,  26 }, // M8N
+        { 140, 141 }  // Neo-6M
+};
 
 
 static Configuration     cfg;
@@ -34,6 +45,11 @@ static PowerManagement   pm;
 static OneButton         userBtn(BUTTON_PIN, true, true);
 static HardwareSerial    ss(1);
 static GPSDevice         gps;
+
+static unsigned long     freqAwake = MCU_FREQ_AWAKE;
+static unsigned long     lastPvtMillis = 0;
+static bool              canGoSleeping = false;
+
 
 
 struct GlobalParameters
@@ -161,6 +177,7 @@ struct GlobalParameters
             forceScreenRefresh(false),
             outputPowerdBm(-30),
             outputPowerWatt(0.001),
+            pmillisAfterPvtToEnterSleep((unsigned long *)&millisAfterPvtToEnterSleep[0][0]),
 #ifdef TTGO_T_Beam_V1_0
             batteryLastCheckTime(0),
 #endif
@@ -240,6 +257,7 @@ struct GlobalParameters
         bool             forceScreenRefresh;
         int32_t          outputPowerdBm;
         double           outputPowerWatt;
+        unsigned long   *pmillisAfterPvtToEnterSleep;
 #ifdef TTGO_T_Beam_V1_0
         unsigned long    batteryLastCheckTime;
 #endif
@@ -298,7 +316,7 @@ static void gpsInitialize()
         ESP.restart(); // Reboot
 #else
         oled.Display(" GPS INIT", emptyString, "Initialization Failed", " Please power cycle. ");
-        setCpuFrequencyMhz(10);
+        setCpuFrequencyMhz(MCU_FREQ_ASLEEP);
         while (true) { delay(10); }
 #endif
     }
@@ -318,7 +336,7 @@ static void loraInitialize()
         DlogPrintlnE("LoRa Init Failed!");
         oled.Display(" LoRa INIT", emptyString, "Initialization Failed", " Please power cycle. ");
 
-        setCpuFrequencyMhz(10);
+        setCpuFrequencyMhz(MCU_FREQ_ASLEEP);
         while (true) { delay(10); }
     }
 
@@ -457,7 +475,7 @@ void setup()
         oled.Display("  ERROR!", "You have to change your settings in 'data/tracker.json' and "
                 "upload it via \"Upload File System image\"!");
 
-        setCpuFrequencyMhz(10);
+        setCpuFrequencyMhz(MCU_FREQ_ASLEEP);
         while (true) { delay(10); }
     }
 
@@ -472,6 +490,13 @@ void setup()
 
     gParams.SetDisplayTimeout(cfg.display.timeout);
     gParams.SetOutputPower(cfg.lora.power);
+
+    // Select to right milliseconds entry in the array.
+    // Neo-6M has to process more UBX packets than the M8N
+    gParams.pmillisAfterPvtToEnterSleep = (unsigned long *)(gps.IsNeo6M() ? &millisAfterPvtToEnterSleep[1][0] : &millisAfterPvtToEnterSleep[0][0]);
+
+    // Neo-6M needs more processing power (due to UBX processing), using 10MHz make the screen flickering.
+    freqAwake = (gps.IsNeo6M() ? MCU_FREQ_AWAKE_NEO6 : MCU_FREQ_AWAKE);
 
     // make sure wifi and bt are off as we don't need it:
     WiFi.mode(WIFI_OFF);
@@ -513,12 +538,15 @@ void setup()
 
     gParams.ResetDisplayTimeout(); // Enable OLED timeout
     gParams.hasStarted = true; // main loop will start, unlock the userButton thread
-    setCpuFrequencyMhz(20);
+    setCpuFrequencyMhz(freqAwake);
 }
+
 
 // cppcheck-suppress unusedFunction
 void loop()
 {
+    bool goToSleep = false;
+
     gParams.DisplayTick();
 
     // Check if a PVT data is available, when GPS is in use
@@ -569,6 +597,8 @@ void loop()
     {
         gParams.lastUpdateTime = millis();
         gParams.forceScreenRefresh = false;
+        lastPvtMillis = millis();
+        canGoSleeping = true;
 
         bool     gpsPVT             = gpsHasPVT;
         bool     gpsFix             = gParams.locationFromGPS ? false : true;
@@ -1041,18 +1071,32 @@ void loop()
         gParams.btnClicks = GlobalParameters::BUTTON_CLICKED_NONE;
     }
 
+    if (gParams.locationFromGPS)
+    {
+        unsigned long m = (millis() - lastPvtMillis);
+
+        // Do we meet the conditions to execute a LightSleep ?
+        if (canGoSleeping && (lastPvtMillis > 0) && (ss.available() == 0) &&
+                ((m >= *gParams.pmillisAfterPvtToEnterSleep) && (m <= *(gParams.pmillisAfterPvtToEnterSleep + 1))))
+        {
+            goToSleep = true;
+            canGoSleeping = false;
+            lastPvtMillis = 0;
+        }
+    }
+
     // ESP32 Light Sleep
     if (userBtn.isIdle() && (gParams.forceScreenRefresh == false) && // Button is idling, no refresh screen is pending
-            (gParams.locationFromGPS == false) && // GNSS is OFF
+            ((gParams.locationFromGPS == false) || (goToSleep)) && // GNSS is OFF or we have a small time window to sleep
             ((gParams.GetDisplayTimeout() == 0) || (oled.IsActivated() == false)) && // Screen is OFF (if timeout is set)
             ((gParams.lightSleepExitTime == 0) || ((millis() - gParams.lightSleepExitTime) > gParams.awakenTimePeriod))) // Wait 5s after awaken from the button before going to sleep.
     {
         esp_sleep_wakeup_cause_t cause;
-        uint64_t sleepTime = 800;
+        uint64_t sleepTime = gParams.locationFromGPS ? 700 : 800;
 
-        setCpuFrequencyMhz(10);
+        setCpuFrequencyMhz(MCU_FREQ_ASLEEP);
         cause = execLightSleep(sleepTime);
-        setCpuFrequencyMhz(20);
+        setCpuFrequencyMhz(freqAwake);
 
         switch (cause)
         {
