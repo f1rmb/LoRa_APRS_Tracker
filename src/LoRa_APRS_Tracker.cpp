@@ -496,7 +496,7 @@ void setup()
     // Neo-6M has to process more UBX packets than the M8N
     gParams.pmillisAfterPvtToEnterSleep = (unsigned long *)(gps.IsNeo6M() ? &millisAfterPvtToEnterSleep[1][0] : &millisAfterPvtToEnterSleep[0][0]);
 
-    // Neo-6M needs more processing power (due to UBX processing), using 10MHz make the screen flickering.
+    // Neo-6M needs more processing power (due to UBX processing), using 20MHz make the screen flickering.
     gParams.mcuFreqAwake = (gps.IsNeo6M() ? MCU_FREQ_AWAKE_NEO6 : MCU_FREQ_AWAKE);
 
     // make sure wifi and bt are off as we don't need it:
