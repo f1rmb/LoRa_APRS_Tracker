@@ -46,11 +46,6 @@ static OneButton         userBtn(BUTTON_PIN, true, true);
 static HardwareSerial    ss(1);
 static GPSDevice         gps;
 
-static unsigned long     freqAwake = MCU_FREQ_AWAKE;
-static unsigned long     lastPvtMillis = 0;
-static bool              canGoSleeping = false;
-
-
 
 struct GlobalParameters
 {
@@ -178,6 +173,9 @@ struct GlobalParameters
             outputPowerdBm(-30),
             outputPowerWatt(0.001),
             pmillisAfterPvtToEnterSleep((unsigned long *)&millisAfterPvtToEnterSleep[0][0]),
+            mcuFreqAwake(MCU_FREQ_AWAKE),
+            lastPvtMillis(0),
+            canGoSleeping(false),
 #ifdef TTGO_T_Beam_V1_0
             batteryLastCheckTime(0),
 #endif
@@ -258,6 +256,9 @@ struct GlobalParameters
         int32_t          outputPowerdBm;
         double           outputPowerWatt;
         unsigned long   *pmillisAfterPvtToEnterSleep;
+        uint32_t         mcuFreqAwake;
+        unsigned long    lastPvtMillis;
+        bool             canGoSleeping;
 #ifdef TTGO_T_Beam_V1_0
         unsigned long    batteryLastCheckTime;
 #endif
@@ -496,7 +497,7 @@ void setup()
     gParams.pmillisAfterPvtToEnterSleep = (unsigned long *)(gps.IsNeo6M() ? &millisAfterPvtToEnterSleep[1][0] : &millisAfterPvtToEnterSleep[0][0]);
 
     // Neo-6M needs more processing power (due to UBX processing), using 10MHz make the screen flickering.
-    freqAwake = (gps.IsNeo6M() ? MCU_FREQ_AWAKE_NEO6 : MCU_FREQ_AWAKE);
+    gParams.mcuFreqAwake = (gps.IsNeo6M() ? MCU_FREQ_AWAKE_NEO6 : MCU_FREQ_AWAKE);
 
     // make sure wifi and bt are off as we don't need it:
     WiFi.mode(WIFI_OFF);
@@ -538,7 +539,7 @@ void setup()
 
     gParams.ResetDisplayTimeout(); // Enable OLED timeout
     gParams.hasStarted = true; // main loop will start, unlock the userButton thread
-    setCpuFrequencyMhz(freqAwake);
+    setCpuFrequencyMhz(gParams.mcuFreqAwake);
 }
 
 
@@ -597,8 +598,8 @@ void loop()
     {
         gParams.lastUpdateTime = millis();
         gParams.forceScreenRefresh = false;
-        lastPvtMillis = millis();
-        canGoSleeping = true;
+        gParams.lastPvtMillis = millis();
+        gParams.canGoSleeping = true;
 
         bool     gpsPVT             = gpsHasPVT;
         bool     gpsFix             = gParams.locationFromGPS ? false : true;
@@ -1073,15 +1074,15 @@ void loop()
 
     if (gParams.locationFromGPS)
     {
-        unsigned long m = (millis() - lastPvtMillis);
+        unsigned long m = (millis() - gParams.lastPvtMillis);
 
         // Do we meet the conditions to execute a LightSleep ?
-        if (canGoSleeping && (lastPvtMillis > 0) && (ss.available() == 0) &&
+        if (gParams.canGoSleeping && (gParams.lastPvtMillis > 0) && (ss.available() == 0) &&
                 ((m >= *gParams.pmillisAfterPvtToEnterSleep) && (m <= *(gParams.pmillisAfterPvtToEnterSleep + 1))))
         {
             goToSleep = true;
-            canGoSleeping = false;
-            lastPvtMillis = 0;
+            gParams.canGoSleeping = false;
+            gParams.lastPvtMillis = 0;
         }
     }
 
@@ -1096,7 +1097,7 @@ void loop()
 
         setCpuFrequencyMhz(MCU_FREQ_ASLEEP);
         cause = execLightSleep(sleepTime);
-        setCpuFrequencyMhz(freqAwake);
+        setCpuFrequencyMhz(gParams.mcuFreqAwake);
 
         switch (cause)
         {
