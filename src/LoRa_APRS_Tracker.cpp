@@ -439,7 +439,7 @@ void setup()
 
 #ifdef TTGO_T_Beam_V1_0
     Wire.begin(SDA, SCL);
-    if (!pm.begin(Wire))
+    if (pm.begin(Wire))
     {
         DlogPrintlnI("AXP192 init done!");
     }

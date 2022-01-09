@@ -9,11 +9,11 @@ PowerManagement::PowerManagement()
 // cppcheck-suppress unusedFunction
 bool PowerManagement::begin(TwoWire &port)
 {
-    bool result = axp.begin(port, AXP192_SLAVE_ADDRESS);
+    bool result = (axp.begin(port, AXP192_SLAVE_ADDRESS) == AXP_PASS);
 
-    if (!result)
+    if (result)
     {
-        axp.setDCDC1Voltage(3300);
+        result = (axp.setDCDC1Voltage(3300) == AXP_PASS);
     }
 
     return result;
