@@ -439,7 +439,7 @@ bool GPSDevice::setUBXMode()
         {
             delay(2000);
 
-            // Detect and force Neo-6M mode
+            // Detect GNSS type, used to differenciate Neo-6M and M8N (OTHER)
             m_gnss.setGNSSType((m_gnssType = m_gnss.getModuleType(2000)));
 
             return (FlushAndSetAutoPVT());

@@ -83,7 +83,7 @@ struct GlobalParameters
         {
                 GPSState() :
                     hasFix(false),
-                    fixCount(0)
+                    m_fixCount(0)
                 {
 
                 }
@@ -91,7 +91,7 @@ struct GlobalParameters
                 void Reset()
                 {
                     hasFix = false;
-                    fixCount = 0;
+                    m_fixCount = 0;
                 }
 
                 void Tick(bool gpsFixState)
@@ -100,9 +100,9 @@ struct GlobalParameters
                     {
                         if (hasFix == false)
                         {
-                            fixCount++;
+                            m_fixCount++;
 
-                            if (fixCount == 3)
+                            if (m_fixCount == 3)
                             {
                                 hasFix = true;
                                 gps.SetPowerSaving(true);
@@ -110,19 +110,19 @@ struct GlobalParameters
                         }
                         else
                         {
-                            if (fixCount < 3)
+                            if (m_fixCount < 3)
                             {
-                                fixCount++;
+                                m_fixCount++;
                             }
                         }
                     }
                     else
                     {
-                        if (fixCount > 0)
+                        if (m_fixCount > 0)
                         {
-                            fixCount--;
+                            m_fixCount--;
 
-                            if (fixCount == 0)
+                            if (m_fixCount == 0)
                             {
                                 hasFix = false;
                                 gps.SetPowerSaving(false);
@@ -134,7 +134,7 @@ struct GlobalParameters
                 bool           hasFix;
 
             private:
-                uint32_t       fixCount;
+                uint32_t       m_fixCount;
         };
 
     public:
