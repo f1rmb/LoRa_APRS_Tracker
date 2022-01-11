@@ -9,7 +9,7 @@
 class Configuration
 {
     public:
-        static const uint32_t constexpr CONFIGURATION_DISPLAY_TIMEOUT = 5000; // 5 seconds
+        static const uint32_t constexpr CONFIGURATION_DISPLAY_TIMEOUT = 10; // 10 seconds
 
         class Beacon
         {

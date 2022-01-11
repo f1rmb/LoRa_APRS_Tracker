@@ -24,7 +24,7 @@
 #define MCU_FREQ_AWAKE        20U // 20MHz
 #define MCU_FREQ_AWAKE_NEO6   40U // Needs more processing
 
-#define PROGRAM_VERSION  "0.80"
+#define PROGRAM_VERSION  "0.81"
 
 
 // Function prototype
@@ -224,7 +224,7 @@ struct GlobalParameters
             {
                 if (m_displayTimeoutEnabled)
                 {
-                    if ((millis() - m_displayLastTimeout) > m_displayTimeout)
+                    if ((millis() - m_displayLastTimeout) > (m_displayTimeout * 1000))
                     {
                         oled.Activate(false);
                     }
@@ -988,7 +988,7 @@ void loop()
                         uint32_t dispTo = ((gParams.GetDisplayTimeout() == cfg.display.timeout) ? 0 : cfg.display.timeout);
 
                         gParams.ResetDisplayTimeout();
-                        oled.Display("  SCREEN", emptyString, "Timeout: " + ((dispTo > 0) ? (String(dispTo) + "ms") : "disabled"), 2000);
+                        oled.Display("  SCREEN", emptyString, "Timeout: " + ((dispTo > 0) ? (String(dispTo) + "s") : "disabled"), 2000);
                         gParams.SetDisplayTimeout(dispTo);
                         gParams.forceScreenRefresh = true;
                     }
