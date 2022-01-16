@@ -748,7 +748,7 @@ void loop()
 
             msgAprs.setSource(bcm.getCurrentBeaconConfig()->callsign);
             msgAprs.setPath(bcm.getCurrentBeaconConfig()->path);
-            msgAprs.setDestination("APLT00-1");
+            msgAprs.setDestination("APLT00");
 
             // Lat/Long
             Deg2DDMMMM::Convert(pLat, currentLat, bcm.getCurrentBeaconConfig()->enhance_precision);
