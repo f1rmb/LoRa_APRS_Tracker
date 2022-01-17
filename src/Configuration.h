@@ -171,7 +171,7 @@ class Configuration
 class ConfigurationManagement
 {
     public:
-        explicit ConfigurationManagement(String FilePath);
+        explicit ConfigurationManagement(const String &FilePath, const String &defaultFilePath);
 
         Configuration readConfiguration();
         void          writeConfiguration(Configuration conf);
@@ -180,7 +180,7 @@ class ConfigurationManagement
 #endif
 
     private:
-        const String m_FilePath;
+        String m_FilePath;
 };
 
 #endif

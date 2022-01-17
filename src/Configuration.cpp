@@ -9,9 +9,11 @@
 
 const uint32_t Configuration::CONFIGURATION_DISPLAY_TIMEOUT;
 
-ConfigurationManagement::ConfigurationManagement(String FilePath) :
-m_FilePath(FilePath)
+ConfigurationManagement::ConfigurationManagement(const String &FilePath, const String &defaultFilePath)
 {
+    bool userFileIsValid = false;
+    bool success = true;
+
     if (!SPIFFS.begin(true))
     {
         DlogPrintlnE("Mounting SPIFFS was not possible. Trying to format SPIFFS...");
@@ -19,8 +21,26 @@ m_FilePath(FilePath)
         if (!SPIFFS.begin())
         {
             DlogPrintlnE("Formating SPIFFS was not okay!");
+            success = false;
         }
     }
+
+    if (success)
+    {
+        File f = SPIFFS.open(FilePath);
+
+        if (f != 0)
+        {
+            if (f.isDirectory() == false)
+            {
+                userFileIsValid = true;
+            }
+
+            f.close();
+        }
+    }
+
+    m_FilePath = (userFileIsValid ? FilePath : defaultFilePath);
 }
 
 static bool toDouble(const String &s, double *v)
@@ -43,7 +63,7 @@ Configuration ConfigurationManagement::readConfiguration()
     DynamicJsonDocument  data(2048);
     DeserializationError error = deserializeJson(data, file);
 
-    if (error)
+    if (error != DeserializationError::Ok)
     {
         DlogPrintlnE("Failed to read file, using default configuration.");
     }

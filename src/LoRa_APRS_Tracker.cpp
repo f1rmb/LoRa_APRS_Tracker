@@ -298,7 +298,7 @@ static void buttonLongPressCallback()
 
 static void loadConfiguration()
 {
-    ConfigurationManagement confmg("/tracker.json");
+    ConfigurationManagement confmg("/user_tracker.json", "/tracker.json");
     cfg = confmg.readConfiguration();
     bcm.loadConfig(cfg.beacons);
 }
