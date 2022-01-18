@@ -870,7 +870,6 @@ void loop()
                 {
                     oled.Activate(false);
                 }
-                WiFi.mode(WIFI_OFF);
                 gps.SetPowerOff(true, 0);
 
                 for (size_t i = 0; i < sizeof(rtcGpios); i++)
