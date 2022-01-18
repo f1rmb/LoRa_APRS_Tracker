@@ -8,6 +8,10 @@
 #include <esp_sleep.h>
 #include <driver/uart.h>
 #include <soc/rtc_wdt.h>
+#ifdef TTGO_T_Beam_V0_7
+#include <driver/rtc_io.h>
+#endif
+
 
 #include <thread>
 
@@ -46,6 +50,107 @@ static OneButton         userBtn(BUTTON_PIN, true, true);
 static HardwareSerial    ss(1);
 static GPSDevice         gps;
 
+
+#ifdef TTGO_T_Beam_V0_7
+#define BATTERY_SENSE_RESOLUTION_BITS   10
+#define ADC_MULTIPLIER                  2.0
+#define AREF_VOLTAGE                    3.3
+#define FLAT_BATTERY_VOLTAGE            3270U
+
+template<typename T>
+class ValueAveraging
+{
+    protected:
+        static const uint16_t ARRAY_SIZE_MAX = 30;
+
+    public:
+        ValueAveraging() :
+            m_average(ARRAY_SIZE_MAX)
+        {
+            ResetValues();
+        }
+        ~ValueAveraging()
+        {
+        }
+
+        void StackValue(T value)
+        {
+            if (value > 0)
+            {
+                m_offset = (m_offset + 1) % m_average;
+                m_values[m_offset] = value;
+            }
+        }
+
+        T GetValue()
+        {
+            uint16_t n = 0;
+            double   sum = 0.0;
+
+            for (uint16_t i = 0; i < m_average; i++)
+            {
+                if (isnan(m_values[i]))
+                {
+                    break;
+                }
+
+                if (m_values[i] > 0)
+                {
+                    sum += m_values[i];
+                    n++;
+                }
+            }
+
+            // No usable value found.
+            if (n == 0)
+            {
+                return 0;
+            }
+
+            return static_cast<T>((sum / double(n)) + 0.5); // ceil
+        }
+
+        bool SetAverageCount(uint16_t v)
+        {
+            bool ret = false;
+
+            if ((v >= 0) && (v <= ARRAY_SIZE_MAX))
+            {
+                // Zeroing the array
+                ResetValues();
+                m_average = v;
+                ret = true;
+            }
+
+            return ret;
+        }
+
+        uint16_t GetAverageCount()
+        {
+            return m_average;
+        }
+
+        uint16_t GetMaxAverageCount()
+        {
+            return ARRAY_SIZE_MAX;
+        }
+
+        void ResetValues()
+        {
+            for (uint16_t i = 0; i < ARRAY_SIZE_MAX; i++)
+            {
+                m_values[i] = NAN;
+            }
+
+            m_offset = ARRAY_SIZE_MAX - 1;
+        }
+
+    private:
+        double               m_values[ARRAY_SIZE_MAX]; ///< values array storage
+        uint16_t             m_offset; ///< offset in m_values[]
+        uint16_t             m_average; ///< max values used from m_values[] to build average value
+};
+#endif
 
 struct GlobalParameters
 {
@@ -176,9 +281,7 @@ struct GlobalParameters
             mcuFreqAwake(MCU_FREQ_AWAKE),
             lastPvtMillis(0),
             canGoSleeping(false),
-#ifdef TTGO_T_Beam_V1_0
             batteryLastCheckTime(0),
-#endif
             m_displayTimeout(Configuration::CONFIGURATION_DISPLAY_TIMEOUT),
             m_displayLastTimeout(millis()),
             m_displayTimeoutEnabled(true)
@@ -259,11 +362,12 @@ struct GlobalParameters
         uint32_t         mcuFreqAwake;
         unsigned long    lastPvtMillis;
         bool             canGoSleeping;
-#ifdef TTGO_T_Beam_V1_0
         unsigned long    batteryLastCheckTime;
-#endif
         GPSInformations  lastValidGPS;
         GPSState         gpsState;
+#ifdef TTGO_T_Beam_V0_7
+        ValueAveraging<uint16_t>  batteryAverage;
+#endif
 
     private:
         uint32_t         m_displayTimeout;
@@ -453,6 +557,12 @@ void setup()
     pm.OLEDActivate();
     pm.MeasurementsActivate();
     delay(500);
+#endif
+#ifdef TTGO_T_Beam_V0_7
+    // Initialize ADC
+    pinMode(BATTERY_PIN, INPUT);
+    adcAttachPin(BATTERY_PIN);
+    analogReadResolution(BATTERY_SENSE_RESOLUTION_BITS);
 #endif
 
     delay(500);
@@ -733,6 +843,51 @@ void loop()
             }
         }
 #endif
+#ifdef TTGO_T_Beam_V0_7
+        // Update the battery on then first iteration, or just before transmitting, or every 60 seconds as it's way enough
+        if (((gParams.sendPositionUpdate && gpsHasFix) /*|| (oled.IsActivated())*/ ) ||
+                ((gParams.batteryLastCheckTime == 0) || ((millis() - gParams.batteryLastCheckTime) >= 60000)))
+        {
+            gParams.batteryLastCheckTime = millis();
+
+            uint16_t adcValue = analogRead(BATTERY_PIN);
+            gParams.batteryAverage.StackValue(uint16_t(nearbyint(1000.0 * ADC_MULTIPLIER * (AREF_VOLTAGE / 1024.0) * adcValue)));
+
+            uint16_t averageVoltage = gParams.batteryAverage.GetValue();
+
+            // Critical voltage => shutdown
+            if (averageVoltage < FLAT_BATTERY_VOLTAGE)
+            {
+                static const uint8_t rtcGpios[] =
+                {
+                        /* 0, */ 2, /* 4, */
+                        13, /* 14, */ /* 15, */
+                        /* 25, */ 26, /* 27, */
+                        32, 33, 34, 35, 36, 37 /*, 38, 39 */
+                };
+
+                if (oled.IsActivated())
+                {
+                    oled.Activate(false);
+                }
+                WiFi.mode(WIFI_OFF);
+                gps.SetPowerOff(true, 0);
+
+                for (size_t i = 0; i < sizeof(rtcGpios); i++)
+                {
+                    rtc_gpio_isolate(gpio_num_t(rtcGpios[i]));
+                }
+
+                esp_sleep_pd_config(ESP_PD_DOMAIN_RTC_PERIPH, ESP_PD_OPTION_OFF);
+                gpio_wakeup_disable((gpio_num_t)BUTTON_PIN);
+                gpio_wakeup_disable((gpio_num_t)GPS_TX);
+                setCpuFrequencyMhz(MCU_FREQ_ASLEEP); // Switch to 10MHz
+                esp_deep_sleep_start(); // Jump to deep sleep, endlessly
+            }
+
+            gParams.batteryVoltage = String((averageVoltage * 1e-3), 2);
+        }
+#endif
 
         // Time to send an APRS frame
         if (gParams.sendPositionUpdate && gpsHasFix)
@@ -833,6 +988,10 @@ void loop()
             }
             else
             {
+#ifdef TTGO_T_Beam_V0_7
+                aprsmsgStr += " -  _Bat.: " + gParams.batteryVoltage + "V";
+#endif
+
                 if (bcm.getCurrentBeaconConfig()->add_power)
                 {
                     aprsmsgStr += " - Pwr: " + String((gParams.outputPowerWatt * 1e3), 0) + "mW";
@@ -914,7 +1073,12 @@ void loop()
                 dtStr,
                 String("Sats: ") + (posIsValid ? (gParams.locationFromGPS ? String(gParams.lastValidGPS.satellites) : "F" ) : "-") + " HDOP: " + (posIsValid ? String(gParams.lastValidGPS.hdop) : "--.--"),
                 String("Nxt Bcn: ") + (posIsValid ? ((gParams.locationFromGPS && bcm.getCurrentBeaconConfig()->smart_beacon.active) ? "~" : "") + formatToTimeString(gParams.nextBeaconTimeStamp) : "--:--:--"),
+#ifdef TTGO_T_Beam_V1_0
                 (gParams.batteryIsConnected ? (String("Bat: ") + gParams.batteryVoltage + "V, " + gParams.batteryChargeCurrent + "mA") : "Powered via USB"),
+#endif
+#ifdef TTGO_T_Beam_V0_7
+                String("Bat: ") + gParams.batteryVoltage + "V",
+#endif
                 String("S-Beacon: " + getOnOff(gParams.locationFromGPS && bcm.getCurrentBeaconConfig()->smart_beacon.active)) + ", " + String((gParams.outputPowerWatt * 1e3), 0) + "mW");
 
 #if 0

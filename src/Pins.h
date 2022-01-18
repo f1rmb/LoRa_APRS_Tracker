@@ -11,6 +11,7 @@
 
 #ifdef TTGO_T_Beam_V0_7
 #define BUTTON_PIN 39 // The middle button GPIO on the T-Beam v0.7
+#define BATTERY_PIN 35
 #endif
 
 #ifdef TTGO_T_Beam_V1_0
