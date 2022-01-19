@@ -6,7 +6,7 @@
 			"path": "WIDE1-1",
 			"message": "LoRa Tracker",
 			"add_power": true,
-			"timeout": 1,
+			"timeout": 15,
 			"symbol": "[",
 			"overlay": "/",
 			"smart_beacon": {
