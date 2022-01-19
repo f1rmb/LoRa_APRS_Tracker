@@ -28,7 +28,7 @@
 #define MCU_FREQ_AWAKE        20U // 20MHz
 #define MCU_FREQ_AWAKE_NEO6   40U // Needs more processing
 
-#define PROGRAM_VERSION  "0.84"
+#define PROGRAM_VERSION  "0.85"
 
 
 // Function prototype
