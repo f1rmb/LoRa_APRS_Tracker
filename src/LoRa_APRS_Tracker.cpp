@@ -28,7 +28,7 @@
 #define MCU_FREQ_AWAKE        20U // 20MHz
 #define MCU_FREQ_AWAKE_NEO6   40U // Needs more processing
 
-#define PROGRAM_VERSION  "0.85"
+#define PROGRAM_VERSION  "0.86"
 
 
 // Function prototype
@@ -533,8 +533,7 @@ static void buttonThread()
 void setup()
 {
 #if defined(USE_ESP_LOGGER)
-    // Log only Errors
-    Logger::instance().setDebugLevel(Logger::DEBUG_LEVEL_ERROR);
+    //Logger::instance().setDebugLevel(Logger::DEBUG_LEVEL_ERROR);
     Logger::instance().enableColor(false);
 #endif
 

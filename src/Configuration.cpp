@@ -43,11 +43,6 @@ ConfigurationManagement::ConfigurationManagement(const String &FilePath, const S
     m_FilePath = (userFileIsValid ? FilePath : defaultFilePath);
 }
 
-static bool toDouble(const String &s, double *v)
-{
-    return (sscanf(s.c_str(), "%lf", v) == 1);
-}
-
 // cppcheck-suppress unusedFunction
 Configuration ConfigurationManagement::readConfiguration()
 {
@@ -148,25 +143,9 @@ Configuration ConfigurationManagement::readConfiguration()
 
     if (data.containsKey("location"))
     {
-        // JSON to double loses precision, hence use sscanf()
-        if (data["location"].containsKey("latitude"))
-        {
-            if (toDouble(data["location"]["latitude"].as<String>(), &conf.location.latitude) == false)
-            {
-                conf.location.latitude      = data["location"]["latitude"];
-            }
-        }
-
-        // JSON to double loses precision, hence use sscanf()
-        if (data["location"].containsKey("longitude"))
-        {
-            if (toDouble(data["location"]["longitude"].as<String>(), &conf.location.longitude) == false)
-            {
-                conf.location.longitude     = data["location"]["longitude"];
-            }
-        }
-
-        conf.location.altitude          = data["location"]["altitude"];
+        conf.location.latitude          = data["location"]["latitude"] | 0.0;
+        conf.location.longitude         = data["location"]["longitude"] | 0.0;
+        conf.location.altitude          = data["location"]["altitude"] | 0;
 
         if (data["location"].containsKey("symbol"))
         {
