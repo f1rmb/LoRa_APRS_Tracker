@@ -1,10 +1,10 @@
 #include <SPIFFS.h>
+#include <logger.h>
 
 #ifndef CPPCHECK
 #include <ArduinoJson.h>
 #endif
 
-#include "dummyLogger.h"
 #include "Configuration.h"
 
 const uint32_t Configuration::CONFIGURATION_DISPLAY_TIMEOUT;
@@ -16,11 +16,11 @@ ConfigurationManagement::ConfigurationManagement(const String &FilePath, const S
 
     if (!SPIFFS.begin(true))
     {
-        DlogPrintlnE("Mounting SPIFFS was not possible. Trying to format SPIFFS...");
+        logPrintlnE("Mounting SPIFFS was not possible. Trying to format SPIFFS...");
         SPIFFS.format();
         if (!SPIFFS.begin())
         {
-            DlogPrintlnE("Formating SPIFFS was not okay!");
+            logPrintlnE("Formating SPIFFS was not okay!");
             success = false;
         }
     }
@@ -55,7 +55,7 @@ Configuration ConfigurationManagement::readConfiguration()
 
     if (!file)
     {
-        DlogPrintlnE("Failed to open file for reading...");
+        logPrintlnE("Failed to open file for reading...");
         return Configuration();
     }
 
@@ -65,7 +65,7 @@ Configuration ConfigurationManagement::readConfiguration()
 
     if (error != DeserializationError::Ok)
     {
-        DlogPrintlnE("Failed to read file, using default configuration.");
+        logPrintlnE("Failed to read file, using default configuration.");
     }
 
     file.close();
@@ -202,7 +202,7 @@ void ConfigurationManagement::writeConfiguration(Configuration conf)
 
     if (!file)
     {
-        DlogPrintlnE("Failed to open file for writing...");
+        logPrintlnE("Failed to open file for writing...");
         return;
     }
 

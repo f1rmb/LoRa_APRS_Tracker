@@ -4,6 +4,7 @@
 #include <OneButton.h>
 #include <TimeLib.h>
 #include <WiFi.h>
+#include <logger.h>
 
 #include <esp_sleep.h>
 #include <driver/uart.h>
@@ -15,7 +16,6 @@
 
 #include <thread>
 
-#include "dummyLogger.h"
 #include "Configuration.h"
 #include "GPSDevice.h"
 #include "Display.h"
@@ -413,7 +413,7 @@ static void gpsInitialize()
 
     if (gps.Initialize(ss) == false)
     {
-        DlogPrintlnE("GPS Init Failed!");
+        logPrintlnE("GPS Init Failed!");
 #ifdef TTGO_T_Beam_V1_0 // Power cycle the GPS module
         oled.Display(" GPS INIT", emptyString, "Initialization Failed",  "   Power cycling &", "     rebooting...");
         pm.GPSDeactivate();
@@ -438,7 +438,7 @@ static void loraInitialize()
 
     if (LoRa.begin(freq) == false)
     {
-        DlogPrintlnE("LoRa Init Failed!");
+        logPrintlnE("LoRa Init Failed!");
         oled.Display(" LoRa INIT", emptyString, "Initialization Failed", " Please power cycle. ");
 
         setCpuFrequencyMhz(MCU_FREQ_ASLEEP);
@@ -532,9 +532,10 @@ static void buttonThread()
 // cppcheck-suppress unusedFunction
 void setup()
 {
-#if defined(LOGGER_ENABLED)
+#if defined(USE_ESP_LOGGER)
     // Log only Errors
     Logger::instance().setDebugLevel(Logger::DEBUG_LEVEL_ERROR);
+    Logger::instance().enableColor(false);
 #endif
 
     Serial.begin(115200);
@@ -545,11 +546,11 @@ void setup()
     Wire.begin(SDA, SCL);
     if (pm.begin(Wire))
     {
-        DlogPrintlnI("AXP192 init done!");
+        logPrintlnI("AXP192 init done!");
     }
     else
     {
-        DlogPrintlnE("AXP192 init failed!");
+        logPrintlnE("AXP192 init failed!");
     }
 
     pm.GPSActivate();
@@ -566,7 +567,7 @@ void setup()
 #endif
 
     delay(500);
-    DlogPrintlnI("LoRa APRS Tracker by OE5BPA (Peter Buchegger)");
+    logPrintlnI("LoRa APRS Tracker by OE5BPA (Peter Buchegger)");
 
     loadConfiguration();
 
@@ -581,7 +582,7 @@ void setup()
     if ((bcm.getCurrentBeaconConfig()->callsign.length() == 0) ||
             bcm.getCurrentBeaconConfig()->callsign.startsWith("NOCALL"))
     {
-        DlogPrintlnE("You have to change your settings in 'data/tracker.json' and "
+        logPrintlnE("You have to change your settings in 'data/tracker.json' and "
                 "upload it via \"Upload File System image\"!");
         oled.Display("  ERROR!", "You have to change your settings in 'data/tracker.json' and "
                 "upload it via \"Upload File System image\"!");
@@ -619,9 +620,9 @@ void setup()
     userBtn.attachMultiClick(buttonMultiPressCallback);
     userBtn.attachLongPressStart(buttonLongPressCallback);
 
-    DlogPrintlnI("Smart Beacon is " + getOnOff(bcm.getCurrentBeaconConfig()->smart_beacon.active));
+    logPrintlnI("Smart Beacon is " + getOnOff(bcm.getCurrentBeaconConfig()->smart_beacon.active));
     oled.Display("   INFO", emptyString, "Smart Beacon is " + getOnOff(bcm.getCurrentBeaconConfig()->smart_beacon.active), 1000);
-    DlogPrintlnI("setup done...");
+    logPrintlnI("setup done...");
 
 #if 0
     delay(500);
@@ -1005,7 +1006,7 @@ void loop()
 
             msgAprs.getBody()->setData(aprsmsgStr);
             String data(msgAprs.encode());
-            DlogPrintlnD(data);
+            logPrintlnD(data);
 
             oled.Display(" << TX >>", data);
 
