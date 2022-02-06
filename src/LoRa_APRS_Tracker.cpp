@@ -28,7 +28,7 @@
 #define MCU_FREQ_AWAKE        20U // 20MHz
 #define MCU_FREQ_AWAKE_NEO6   40U // Needs more processing
 
-#define PROGRAM_VERSION  "0.86"
+#define PROGRAM_VERSION  "0.87"
 
 
 // Function prototype
@@ -303,6 +303,8 @@ struct GlobalParameters
         {
             outputPowerdBm = dBm;
             outputPowerWatt = pow(10.0, (dBm - 30.0) / 10.0);
+            LoRa.setTxPower(dBm);
+            LoRa.sleep();
         }
 
         void ResetDisplayTimeout()
@@ -450,7 +452,7 @@ static void loraInitialize()
     LoRa.setCodingRate4(cfg.lora.codingRate4);
     LoRa.enableCrc();
 
-    LoRa.setTxPower(cfg.lora.power);
+    LoRa.setTxPower(bcm.getCurrentBeaconConfig()->lora_power);
     LoRa.sleep();
 
     oled.Display(" LoRa INIT", emptyString, "Initialization OK", 2000);
@@ -578,8 +580,7 @@ void setup()
     oled.Display("  OE5BPA", "  LoRa APRS Tracker", " by  Peter Buchegger", emptyString, " Mods: Daniel, F1RMB", "                v" + String(PROGRAM_VERSION), 2000);
 #endif
     // Check the callsign setting validity
-    if ((bcm.getCurrentBeaconConfig()->callsign.length() == 0) ||
-            bcm.getCurrentBeaconConfig()->callsign.startsWith("NOCALL"))
+    if (bcm.sanityCheck() == false)
     {
         logPrintlnE("You have to change your settings in 'data/tracker.json' and "
                 "upload it via \"Upload File System image\"!");
@@ -600,7 +601,7 @@ void setup()
     }
 
     gParams.SetDisplayTimeout(cfg.display.timeout);
-    gParams.SetOutputPower(cfg.lora.power);
+    gParams.SetOutputPower(bcm.getCurrentBeaconConfig()->lora_power);
 
     // Select to right milliseconds entry in the array.
     // Neo-6M has to process more UBX packets than the M8N
@@ -1221,6 +1222,7 @@ void loop()
                     {
                         bcm.loadNextBeacon();
                         oled.Display(bcm.getCurrentBeaconConfig()->callsign, emptyString, bcm.getCurrentBeaconConfig()->message, 2000);
+                        gParams.SetOutputPower(bcm.getCurrentBeaconConfig()->lora_power);
                         gParams.forceScreenRefresh = true;
                     }
                     break;

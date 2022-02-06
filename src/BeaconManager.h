@@ -13,6 +13,8 @@ class BeaconManager
         std::list<Configuration::Beacon>::iterator getCurrentBeaconConfig() const;
         void                                       loadNextBeacon();
 
+        bool                                       sanityCheck();
+
     private:
         std::list<Configuration::Beacon>           m_beaconConfig;
         std::list<Configuration::Beacon>::iterator m_currentBeaconConfig;

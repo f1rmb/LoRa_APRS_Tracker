@@ -20,7 +20,28 @@
 				"min_bcn": 5
 			},
 			"enhance_precision": true
-		}
+		},
+		{
+			"callsign": "NOCALL-7",
+			"path": "WIDE1-1",
+			"message": "LoRa Tracker - Low Power",
+			"add_power": true,
+			"timeout": 45,
+			"symbol": "r",
+			"overlay": "/",
+			"smart_beacon": {
+				"active": false,
+				"turn_min": 25,
+				"slow_rate": 300,
+				"slow_speed": 10,
+				"fast_rate": 60,
+				"fast_speed": 100,
+				"min_tx_dist": 100,
+				"min_bcn": 5
+			},
+			"enhance_precision": true,
+			"lora_power": 10
+		},
 	],
 	"button": {
 		"tx": true,

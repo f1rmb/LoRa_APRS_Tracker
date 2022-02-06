@@ -69,6 +69,17 @@ Configuration ConfigurationManagement::readConfiguration()
 
     conf.debug                          = data["debug"] | false;
 
+    // process lora first, as power will be needed for beacon's lora_power
+    if (data.containsKey("lora"))
+    {
+        conf.lora.frequencyRx           = data["lora"]["frequency_rx"] | 433775000;
+        conf.lora.frequencyTx           = data["lora"]["frequency_tx"] | 433775000;
+        conf.lora.power                 = data["lora"]["power"] | 20;
+        conf.lora.spreadingFactor       = data["lora"]["spreading_factor"] | 12;
+        conf.lora.signalBandwidth       = data["lora"]["signal_bandwidth"] | 125000;
+        conf.lora.codingRate4           = data["lora"]["coding_rate4"] | 5;
+    }
+
     JsonArray beacons = data["beacons"].as<JsonArray>();
     for (JsonVariant v : beacons)
     {
@@ -112,6 +123,7 @@ Configuration ConfigurationManagement::readConfiguration()
         beacon.smart_beacon.min_bcn     = v["smart_beacon"]["min_bcn"] | 5;
 
         beacon.enhance_precision        = v["enhance_precision"] | false;
+        beacon.lora_power               = v["lora_power"] | conf.lora.power;
 
         conf.beacons.push_back(beacon);
     }
@@ -120,16 +132,6 @@ Configuration ConfigurationManagement::readConfiguration()
     {
         conf.button.tx                      = data["button"]["tx"] | false;
         conf.button.alt_message             = data["button"]["alt_message"] | false;
-    }
-
-    if (data.containsKey("lora"))
-    {
-        conf.lora.frequencyRx           = data["lora"]["frequency_rx"] | 433775000;
-        conf.lora.frequencyTx           = data["lora"]["frequency_tx"] | 433775000;
-        conf.lora.power                 = data["lora"]["power"] | 20;
-        conf.lora.spreadingFactor       = data["lora"]["spreading_factor"] | 12;
-        conf.lora.signalBandwidth       = data["lora"]["signal_bandwidth"] | 125000;
-        conf.lora.codingRate4           = data["lora"]["coding_rate4"] | 5;
     }
 
     if (data.containsKey("ptt_output"))
@@ -208,7 +210,8 @@ void ConfigurationManagement::writeConfiguration(Configuration conf)
         v["smart_beacon"]["min_tx_dist"] = beacon.smart_beacon.min_tx_dist;
         v["smart_beacon"]["min_bcn"]     = beacon.smart_beacon.min_bcn;
 
-        v["enhance_precision"] = beacon.enhance_precision;
+        v["enhance_precision"]           = beacon.enhance_precision;
+        v["lora_power"]                  = beacon.lora_power;
     }
 
     data["debug"]                       = conf.debug;
@@ -244,75 +247,3 @@ void ConfigurationManagement::writeConfiguration(Configuration conf)
     serializeJson(data, file);
     file.close();
 }
-
-#if 0
-static void dprint(const String &n, const String &v)
-{
-    Serial.print(n); Serial.print(">s: ");
-    Serial.println(v);
-}
-static void dprint(const String &n, const bool &v)
-{
-    Serial.print(n); Serial.print(">b: ");
-    Serial.println(v);
-}
-static void dprint(const String &n, const double &v)
-{
-    Serial.print(n); Serial.print(">d: ");
-    Serial.println(v, 6);
-}
-static void dprint(const String &n, const uint32_t &v)
-{
-    Serial.print(n); Serial.print(">u32: ");
-    Serial.println(v);
-}
-static void dprint(const String &n, const uint8_t &v)
-{
-    Serial.print(n); Serial.print(">u8: ");
-    Serial.println(v);
-}
-static void dprint(const String &n, const unsigned long &v)
-{
-    Serial.print(n); Serial.print(">ul: ");
-    Serial.println(v);
-}
-
-void ConfigurationManagement::dump(const Configuration &conf)
-{
-    dprint("[callsign]", conf.callsign);
-
-    dprint("[debug]", conf.debug);
-    dprint("[enhance_precision]", conf.enhance_precision);
-    dprint("[display_timeout]", conf.display_timeout);
-
-    dprint("[beacon][message]", conf.beacon.message);
-    dprint("[beacon][timeout]", conf.beacon.timeout);
-
-    dprint("[beacon][symbol]", conf.beacon.symbol);
-    dprint("[beacon][overlay]", conf.beacon.overlay);
-    dprint("[beacon][button_tx]", conf.beacon.button_tx);
-
-    dprint("[smart_beacon][active]", conf.smart_beacon.active);
-    dprint("[smart_beacon][turn_min]", conf.smart_beacon.turn_min);
-    dprint("[smart_beacon][slow_rate]", conf.smart_beacon.slow_rate);
-    dprint("[smart_beacon][slow_speed]", conf.smart_beacon.slow_speed);
-    dprint("[smart_beacon][fast_rate]", conf.smart_beacon.fast_rate);
-    dprint("[smart_beacon][fast_speed]", conf.smart_beacon.fast_speed);
-    dprint("[smart_beacon][min_tx_dist]", conf.smart_beacon.min_tx_dist);
-    dprint("[smart_beacon][min_bcn]", conf.smart_beacon.min_bcn);
-    dprint("[lora][frequency_rx]", conf.lora.frequencyRx);
-    dprint("[lora][frequency_tx]", conf.lora.frequencyTx);
-    dprint("[lora][power]", conf.lora.power);
-    dprint("[lora][spreading_factor]", conf.lora.spreadingFactor);
-    dprint("[lora][signal_bandwidth]", conf.lora.signalBandwidth);
-    dprint("[lora][coding_rate4]", conf.lora.codingRate4);
-    dprint("[ptt_output][active]", conf.ptt.active);
-    dprint("[ptt_output][io_pin]", conf.ptt.io_pin);
-    dprint("[ptt_output][start_delay]", conf.ptt.start_delay);
-    dprint("[ptt_output][end_delay]", conf.ptt.end_delay);
-    dprint("[ptt_output][reverse]", conf.ptt.reverse);
-    dprint("[location][latitude]", conf.location.latitude);
-    dprint("[location][longitude]", conf.location.longitude);
-    dprint("[location][altitude]", conf.location.altitude);
-}
-#endif

@@ -47,7 +47,8 @@ class Configuration
                     timeout(1),
                     symbol("["),
                     overlay("/"),
-                    enhance_precision(true)
+                    enhance_precision(true),
+                    lora_power(20)
                 {
                 }
 
@@ -60,6 +61,7 @@ class Configuration
                 String       overlay;
                 Smart_Beacon smart_beacon;
                 bool         enhance_precision;
+                int32_t      lora_power;
         };
 
         class LoRa
@@ -175,9 +177,6 @@ class ConfigurationManagement
 
         Configuration readConfiguration();
         void          writeConfiguration(Configuration conf);
-#if 0
-        static void   dump(const Configuration &conf);
-#endif
 
     private:
         String m_FilePath;

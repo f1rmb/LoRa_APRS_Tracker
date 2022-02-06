@@ -18,6 +18,25 @@ std::list<Configuration::Beacon>::iterator BeaconManager::getCurrentBeaconConfig
     return m_currentBeaconConfig;
 }
 
+bool BeaconManager::sanityCheck()
+{
+    std::list<Configuration::Beacon>::iterator it;
+
+    it = m_beaconConfig.begin();
+
+    while (it != m_beaconConfig.end())
+    {
+        if (((*it).callsign.length() == 0) || (*it).callsign.startsWith("NOCALL"))
+        {
+            return false;
+        }
+
+        it++;
+    }
+
+    return true;
+}
+
 // cppcheck-suppress unusedFunction
 void BeaconManager::loadNextBeacon()
 {
