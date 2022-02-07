@@ -24,11 +24,12 @@
 #include "BeaconManager.h"
 #include "Deg2DDMMMM.h"
 
-#define MCU_FREQ_ASLEEP       10U // 10MHz
-#define MCU_FREQ_AWAKE        20U // 20MHz
-#define MCU_FREQ_AWAKE_NEO6   40U // Needs more processing
+#define MCU_FREQ_ASLEEP                10U // 10MHz
+#define MCU_FREQ_AWAKE                 20U // 20MHz
+#define MCU_FREQ_AWAKE_NEO6            40U // Needs more processing
+#define DISPLAY_SCREEN_TOGGLE_RATE      5U // display screen toggle rate (in seconds)
 
-#define PROGRAM_VERSION  "0.87"
+#define PROGRAM_VERSION              "0.87"
 
 
 // Function prototype
@@ -243,14 +244,14 @@ struct GlobalParameters
         };
 
     public:
-        enum BUTTON_CLICKED
+        typedef enum
         {
             BUTTON_CLICKED_NONE      = 0,
             BUTTON_CLICKED_ONCE      = 1,
             BUTTON_CLICKED_TWICE     = 2,
             BUTTON_CLICKED_MULTI     = 3,
             BUTTON_CLICKED_LONGPRESS = 4
-        };
+        } ButtonClicked_t;
 
     public:
         GlobalParameters() :
@@ -355,7 +356,7 @@ struct GlobalParameters
         unsigned long    lastUpdateTime;
         unsigned long    lightSleepExitTime;
         unsigned long    awakenTimePeriod;
-        BUTTON_CLICKED   btnClicks;
+        ButtonClicked_t  btnClicks;
         bool             locationFromGPS;
         bool             forceScreenRefresh;
         int32_t          outputPowerdBm;
@@ -572,7 +573,7 @@ void setup()
 
     loadConfiguration();
 
-    oled.Init(cfg.display.invert, cfg.display.rotation, cfg.display.contrast);
+    oled.Init(cfg.display.invert, cfg.display.rotation, cfg.display.contrast, OLEDDisplay::SCREEN_MODE_APRS, DISPLAY_SCREEN_TOGGLE_RATE);
 
 #if defined(USE_BOOTSCREEN)
     oled.ShowBootscreen("v" + String(PROGRAM_VERSION), 98, 56, BLACK, 4000);
@@ -660,6 +661,7 @@ void loop()
     bool goToSleep = false;
 
     gParams.DisplayTick();
+    oled.Tick();
 
     // Check if a PVT data is available, when GPS is in use
     bool gpsHasPVT = gParams.locationFromGPS ? gps.GetPVT() : false;
@@ -1069,29 +1071,45 @@ void loop()
             blink = !blink;
         }
 
-        oled.Display(bcm.getCurrentBeaconConfig()->callsign,
-                dtStr,
-                String("Sats: ") + (posIsValid ? (gParams.locationFromGPS ? String(gParams.lastValidGPS.satellites) : "F" ) : "-") + " HDOP: " + (posIsValid ? String(gParams.lastValidGPS.hdop) : "--.--"),
-                String("Nxt Bcn: ") + (posIsValid ? ((gParams.locationFromGPS && bcm.getCurrentBeaconConfig()->smart_beacon.active) ? "~" : "") + formatToTimeString(gParams.nextBeaconTimeStamp) : "--:--:--"),
+        switch (oled.GetScreenMode())
+        {
+            case OLEDDisplay::SCREEN_MODE_APRS:
+                oled.Display(bcm.getCurrentBeaconConfig()->callsign,
+                        dtStr,
+                        String("Sats: ") + (posIsValid ? (gParams.locationFromGPS ? String(gParams.lastValidGPS.satellites) : "F" ) : "-") + " HDOP: " + (posIsValid ? String(gParams.lastValidGPS.hdop) : "--.--"),
+                        String("Nxt Bcn: ") + (posIsValid ? ((gParams.locationFromGPS && bcm.getCurrentBeaconConfig()->smart_beacon.active) ? "~" : "") + formatToTimeString(gParams.nextBeaconTimeStamp) : "--:--:--"),
 #ifdef TTGO_T_Beam_V1_0
-                (gParams.batteryIsConnected ? (String("Bat: ") + gParams.batteryVoltage + "V, " + gParams.batteryChargeCurrent + "mA") : "Powered via USB"),
+                        (gParams.batteryIsConnected ? (String("Bat: ") + gParams.batteryVoltage + "V, " + gParams.batteryChargeCurrent + "mA") : "Powered via USB"),
 #endif
 #ifdef TTGO_T_Beam_V0_7
-                String("Bat: ") + gParams.batteryVoltage + "V",
+                        String("Bat: ") + gParams.batteryVoltage + "V",
 #endif
-                String("S-Beacon: " + getOnOff(gParams.locationFromGPS && bcm.getCurrentBeaconConfig()->smart_beacon.active)) + ", " + String((gParams.outputPowerWatt * 1e3), 0) + "mW");
+                        String("S-Beacon: " + getOnOff(gParams.locationFromGPS && bcm.getCurrentBeaconConfig()->smart_beacon.active)) + ", " + String((gParams.outputPowerWatt * 1e3), 0) + "mW");
 
 #if 0
-        Serial.println(String("Sats: ") + String(gParams.lastValidGPS.satellites) + " HDOP: " + gParams.lastValidGPS.hdop +
-                " GPS: " + (posIsValid ? "VALID" : "INVALID") + (gpsHasFix ? " FIX" : " NOFIX") + (" f:") + String(gpsFix) + "  type:" + String(gpsFixType));
-//        Serial.println(String("Sats: ") + String(gParams.lastValidGPS.satellites) + " HDOP: " + gParams.lastValidGPS.hdop +
-//                " GPS: " + (posIsValid ? "Sl" : "Ake"));
-        Serial.println(String("Nxt Bcn: ") + (bcm.getCurrentBeaconConfig()->smart_beacon.active ? "~" : "") + formatToTimeString(gParams.nextBeaconTimeStamp) + " / " + formatToTimeString(n));
+                Serial.println(String("Sats: ") + String(gParams.lastValidGPS.satellites) + " HDOP: " + gParams.lastValidGPS.hdop +
+                        " GPS: " + (posIsValid ? "VALID" : "INVALID") + (gpsHasFix ? " FIX" : " NOFIX") + (" f:") + String(gpsFix) + "  type:" + String(gpsFixType));
+                //        Serial.println(String("Sats: ") + String(gParams.lastValidGPS.satellites) + " HDOP: " + gParams.lastValidGPS.hdop +
+                //                " GPS: " + (posIsValid ? "Sl" : "Ake"));
+                Serial.println(String("Nxt Bcn: ") + (bcm.getCurrentBeaconConfig()->smart_beacon.active ? "~" : "") + formatToTimeString(gParams.nextBeaconTimeStamp) + " / " + formatToTimeString(n));
 #else
-        //Serial.println(String("Sats: ") + (posIsValid ? String(gParams.lastValidGPS.satellites) : "-") + " HDOP: " + (posIsValid ? String(gParams.lastValidGPS.hdop) : "--.--"));
-        //Serial.println(String("Nxt Bcn: ") + (posIsValid ? (bcm.getCurrentBeaconConfig()->smart_beacon.active ? "~" : "") + formatToTimeString(gParams.nextBeaconTimeStamp) : "--:--:--"));
+                //Serial.println(String("Sats: ") + (posIsValid ? String(gParams.lastValidGPS.satellites) : "-") + " HDOP: " + (posIsValid ? String(gParams.lastValidGPS.hdop) : "--.--"));
+                //Serial.println(String("Nxt Bcn: ") + (posIsValid ? (bcm.getCurrentBeaconConfig()->smart_beacon.active ? "~" : "") + formatToTimeString(gParams.nextBeaconTimeStamp) : "--:--:--"));
 #endif
+                break;
 
+            case OLEDDisplay::SCREEN_MODE_SENSORS:
+                oled.Display("  SENSORS",
+                        emptyString,
+                        "Temp:  ",  // Temperature
+                        "Hygro: ",  // Humidity
+                        "Press: "); // Atmo Pressure
+                break;
+
+            case OLEDDisplay::SCREEN_MODE_MAX:
+            default:
+                break;
+        }
         // Beacon's TX interval adjustement
         if (timeIsValid)
         {

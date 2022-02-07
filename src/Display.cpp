@@ -104,7 +104,9 @@ OLEDDisplay::OLEDDisplay() :
         m_display(128, 64, &Wire, OLED_RST),
         m_isInitialized(false),
         m_isActivated(false),
-        m_contrast(0xCF)
+        m_contrast(0xCF),
+        m_screenMode(SCREEN_MODE_APRS),
+        m_firstRun(true)
 {
     for (size_t i = 0; i < (sizeof(currentStrings) / sizeof(currentStrings[0])); i++)
     {
@@ -117,7 +119,7 @@ OLEDDisplay::~OLEDDisplay()
 }
 
 // cppcheck-suppress unusedFunction
-void OLEDDisplay::Init(bool invert, uint8_t rotation, uint8_t contrast)
+void OLEDDisplay::Init(bool invert, uint8_t rotation, uint8_t contrast, ScreenMode_t screenModeStartup, uint32_t screenModeDurationInSec)
 {
     m_contrast = contrast;
 
@@ -143,6 +145,10 @@ void OLEDDisplay::Init(bool invert, uint8_t rotation, uint8_t contrast)
     m_display.ssd1306_command(SSD1306_SETCONTRAST);
     m_display.ssd1306_command(m_contrast);
     m_display.display();
+
+    m_screenMode = screenModeStartup;
+    m_screenModeTimer.setTimeout(screenModeDurationInSec * 1000U);
+
     m_isInitialized = true;
     m_isActivated = true;
 }
@@ -286,6 +292,16 @@ void OLEDDisplay::Activate(bool activate)
     if (activate != m_isActivated)
     {
         m_isActivated = activate;
+
+        if (activate)
+        {
+            m_screenModeTimer.resume();
+        }
+        else
+        {
+            m_screenModeTimer.pause();
+        }
+
         m_display.ssd1306_command(activate ? SSD1306_DISPLAYON : SSD1306_DISPLAYOFF);
         m_display.ssd1306_command(1);
 
@@ -299,4 +315,26 @@ void OLEDDisplay::Activate(bool activate)
 bool OLEDDisplay::IsActivated()
 {
     return (m_isInitialized && m_isActivated);
+}
+
+OLEDDisplay::ScreenMode_t OLEDDisplay::GetScreenMode()
+{
+    return m_screenMode;
+}
+
+void OLEDDisplay::Tick()
+{
+    if (m_firstRun) // Start the screen mode timer on first call of ::Tick()
+    {
+        m_screenModeTimer.start();
+        m_firstRun = false;
+    }
+
+    m_screenModeTimer.clock();
+
+    if (m_screenModeTimer.hasExpired())
+    {
+        m_screenMode = ScreenMode_t(((m_screenMode + 1) % SCREEN_MODE_MAX));
+        m_screenModeTimer.start();
+    }
 }
