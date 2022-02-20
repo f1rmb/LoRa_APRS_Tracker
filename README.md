@@ -37,7 +37,7 @@ The best success is to use PlatformIO (and it is the only platform where I can s
 * To upload it to your board you have to do this via **Upload File System image** in PlatformIO!
 * To find the 'Upload File System image' click the PlatformIO symbol (the little alien) on the left side, choos your configuration, click on 'Platform' and search for 'Upload File System image'.
 
-### Changes in this fork
+# Changes in this fork
 
 * The NMEA parsing from the GPS has been dropped, it now uses binary UBX mode (for both Neo-6M and M8N modules, personal forked Sparkfun's U-BLOX GNSS lib dependency is handled by PlatformIO)
 * The average power consumption has been heavily reduced. The battery life came from ~40 hours, before the modifications, up to weeks now, depending of the settings. Thanks to the UBX mode, ESP32 light-sleeps and down clocking the board (40MHz for Neo-6M, 20MHz for M8N).
@@ -64,4 +64,11 @@ The best success is to use PlatformIO (and it is the only platform where I can s
 
 ## LoRa iGate
 
-Look at my other project: a [LoRa iGate](https://github.com/peterus/LoRa_APRS_iGate)
+Look at my other LoRa project: a [LoRa iGate](https://github.com/f1rmb/LoRa_APRS_iGate), forked from [Peter Buchegger's LoRa iGate](https://github.com/peterus/LoRa_APRS_iGate)
+
+
+## Thanks
+
+I would like to thanks:
+- **Peter Buchegger**, **OE5BPA**, for his amazing LoRa projects.
+- **Joseph**, **F1PFC** and **Thierry**, **F1CXG**, for their help, bug tracking and the loan of some boards.
