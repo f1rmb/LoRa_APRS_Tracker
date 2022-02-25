@@ -71,4 +71,4 @@ Look at my other LoRa project: a [LoRa iGate](https://github.com/f1rmb/LoRa_APRS
 
 I would like to thank:
 - **Peter Buchegger**, **OE5BPA**, for his amazing LoRa projects.
-- **Joseph**, **F1PFC** and **Thierry**, **F1CXG**, for their help, bug tracking and the loan of some boards.
+- **Joseph**, **F1PFC** and **Thierry**, **F1CXG**, for their help, bug tracking and the lent of some boards.
