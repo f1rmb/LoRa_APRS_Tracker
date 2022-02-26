@@ -41,7 +41,7 @@
 			},
 			"enhance_precision": true,
 			"lora_power": 10
-		},
+		}
 	],
 	"button": {
 		"tx": true,
