@@ -2,7 +2,8 @@
 #include "PowerManagement.h"
 
 // cppcheck-suppress uninitMemberVar
-PowerManagement::PowerManagement()
+PowerManagement::PowerManagement() :
+ledState(false)
 {
 }
 
@@ -17,6 +18,17 @@ bool PowerManagement::begin(TwoWire &port)
     }
 
     return result;
+}
+
+void PowerManagement::Tick()
+{
+    bool state = isCharging();
+
+    if (state != ledState)
+    {
+        setChargingLED(state);
+        ledState = state;
+    }
 }
 
 // cppcheck-suppress unusedFunction
@@ -106,3 +118,14 @@ bool PowerManagement::isBatteryConnected()
 {
     return axp.isBatteryConnect();
 }
+
+bool PowerManagement::isCharging()
+{
+    return axp.isChargeing();
+}
+
+void PowerManagement::setChargingLED(bool charging)
+{
+    axp.setChgLEDMode((charging ? AXP20X_LED_LOW_LEVEL : AXP20X_LED_OFF));
+}
+

@@ -28,7 +28,7 @@
 #define MCU_FREQ_AWAKE        20U // 20MHz
 #define MCU_FREQ_AWAKE_NEO6   40U // Needs more processing
 
-#define PROGRAM_VERSION  "0.87"
+#define PROGRAM_VERSION  "0.88"
 
 
 // Function prototype
@@ -660,6 +660,9 @@ void loop()
     bool goToSleep = false;
 
     gParams.DisplayTick();
+#ifdef TTGO_T_Beam_V1_0
+    pm.Tick();
+#endif
 
     // Check if a PVT data is available, when GPS is in use
     bool gpsHasPVT = gParams.locationFromGPS ? gps.GetPVT() : false;

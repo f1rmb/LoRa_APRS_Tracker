@@ -9,6 +9,8 @@ class PowerManagement {
         PowerManagement();
         bool begin(TwoWire &port);
 
+        void Tick();
+
         void LoRaActivate();
         void LoRaDeactivate();
         bool isLoRaActivated();
@@ -29,8 +31,13 @@ class PowerManagement {
 
         bool isBatteryConnected();
 
+        bool isCharging();
+        void setChargingLED(bool charging);
+
+
     private:
         AXP20X_Class axp;
+        bool         ledState;
 };
 
 #endif
